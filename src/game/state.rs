@@ -7,7 +7,7 @@
 //! for game operations and maintains consistency across all game components.
 
 use crate::{
-    new_entity_id, ActionQueue, ConcreteEntity, Entity, EntityId, EntityStats, GameEvent, Level,
+    ActionQueue, ConcreteEntity, Entity, EntityId, EntityStats, GameEvent, Level,
     PlayerCharacter, Position, ThatchError, ThatchResult, TileType, World,
 };
 use serde::{Deserialize, Serialize};

@@ -14,11 +14,11 @@ pub use dungeon::*;
 pub use encounters::*;
 pub use items::*;
 
-use crate::{Level, Position, ThatchError, ThatchResult, Tile, TileType};
+use crate::{Level, Position, ThatchError, ThatchResult, TileType};
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 /// Configuration for procedural generation.
 ///

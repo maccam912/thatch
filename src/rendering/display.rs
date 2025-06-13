@@ -2,14 +2,12 @@
 //!
 //! Screen management and terminal rendering functionality using crossterm.
 
-use crate::{Entity, GameState, Level, Position, ThatchError, ThatchResult, TileType};
+use crate::{Entity, GameState, Position, ThatchError, ThatchResult, TileType};
 use crossterm::{
     cursor,
-    event::{Event, KeyCode, KeyEvent, KeyModifiers},
     execute,
     style::{Color, Print, ResetColor, SetBackgroundColor, SetForegroundColor},
     terminal::{self, Clear, ClearType, EnterAlternateScreen, LeaveAlternateScreen},
-    ExecutableCommand,
 };
 use std::io::{stdout, Write};
 

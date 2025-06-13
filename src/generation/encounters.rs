@@ -3,7 +3,7 @@
 //! Procedural encounter and monster placement system with LLDM integration
 //! for creating dynamic, narrative-driven encounters.
 
-use crate::{GenerationConfig, Generator, ThatchError, ThatchResult};
+use crate::{GenerationConfig, Generator, ThatchResult};
 use rand::rngs::StdRng;
 
 /// Placeholder for encounter generation system.

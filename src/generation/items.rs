@@ -3,7 +3,7 @@
 //! Procedural item generation system for creating weapons, armor, consumables,
 //! and unique items with potential LLDM enhancements.
 
-use crate::{GenerationConfig, Generator, ThatchError, ThatchResult};
+use crate::{GenerationConfig, Generator, ThatchResult};
 use rand::rngs::StdRng;
 
 /// Placeholder for item generation system.

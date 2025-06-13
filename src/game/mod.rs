@@ -18,9 +18,7 @@ pub use entities::*;
 pub use state::*;
 pub use world::*;
 
-use crate::{ThatchError, ThatchResult};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 use uuid::Uuid;
 
 /// Represents a 2D coordinate in the game world.

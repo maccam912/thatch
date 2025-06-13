@@ -10,7 +10,7 @@ use crate::{
     ConcreteAction, Direction, Entity, GameState, MoveAction, Position, ThatchError, ThatchResult,
     WaitAction,
 };
-use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyModifiers};
+use crossterm::event::{self, Event, KeyCode, KeyEvent};
 use std::time::Duration;
 
 /// Input handler for processing player commands.
