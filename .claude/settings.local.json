@@ -8,7 +8,9 @@
       "Bash(cargo:*)",
       "Bash(RUST_BACKTRACE=1 cargo test test_generation_with_small_level)",
       "Bash(rustc:*)",
-      "Bash(rm:*)"
+      "Bash(rm:*)",
+      "Bash(find:*)",
+      "Bash(RUST_BACKTRACE=1 cargo test test_new_algorithm_generation)"
     ],
     "deny": []
   }

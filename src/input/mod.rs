@@ -121,6 +121,13 @@ impl InputHandler {
             // Enter (confirm action)
             KeyCode::Enter => Some(PlayerInput::Confirm),
 
+            // Stairs
+            KeyCode::Char('<') => Some(PlayerInput::UseStairs(crate::StairDirection::Up)),
+            KeyCode::Char('>') => Some(PlayerInput::UseStairs(crate::StairDirection::Down)),
+
+            // New game (when game ended)
+            KeyCode::Char('n') | KeyCode::Char('N') => Some(PlayerInput::NewGame),
+
             _ => None, // Unrecognized key
         }
     }
@@ -164,6 +171,17 @@ impl InputHandler {
                 }
             }
 
+            PlayerInput::UseStairs(direction) => {
+                if let Some(player) = game_state.get_player() {
+                    Ok(Some(ConcreteAction::UseStairs(crate::UseStairsAction::new(
+                        player.id(),
+                        direction,
+                    ))))
+                } else {
+                    Err(ThatchError::InvalidState("No player found".to_string()))
+                }
+            }
+
             // Other inputs don't translate directly to game actions
             _ => Ok(None),
         }
@@ -191,4 +209,8 @@ pub enum PlayerInput {
     Confirm,
     /// Terminal was resized
     Resize { width: u16, height: u16 },
+    /// Use stairs in the specified direction
+    UseStairs(crate::StairDirection),
+    /// Start a new game (when game has ended)
+    NewGame,
 }

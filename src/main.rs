@@ -228,7 +228,10 @@ fn run_game_loop(
                                 game_state.advance_turn()?;
                             }
                             Err(e) => {
-                                display.add_message(format!("Invalid action: {}", e));
+                                // Suppress wall collision messages to reduce noise
+                                if !e.to_string().contains("Position is blocked") {
+                                    display.add_message(format!("Invalid action: {}", e));
+                                }
                             }
                         }
                     }

@@ -194,6 +194,18 @@ pub enum GameEvent {
         event_type: String,
         data: HashMap<String, String>,
     },
+    /// Player changed levels
+    PlayerChangedLevel {
+        player_id: EntityId,
+        old_level: u32,
+        new_level: u32,
+        direction: crate::StairDirection,
+    },
+    /// Game ended with a specific outcome
+    GameEnded {
+        ending_type: String,
+        message: String,
+    },
 }
 
 /// Importance levels for game messages.

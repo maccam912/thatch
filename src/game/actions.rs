@@ -6,7 +6,7 @@
 //! and AI decisions. All actions are serializable for MCP integration,
 //! save/load functionality, and replay systems.
 
-use crate::{Direction, EntityId, GameEvent, Position, ThatchError, ThatchResult};
+use crate::{Direction, Entity, EntityId, GameEvent, Position, ThatchError, ThatchResult};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -426,6 +426,127 @@ impl Action for WaitAction {
     }
 }
 
+/// Action for using stairs to change levels.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UseStairsAction {
+    /// The entity performing the action
+    pub actor: EntityId,
+    /// Direction of stair travel
+    pub direction: StairDirection,
+    /// Action metadata
+    pub metadata: HashMap<String, String>,
+}
+
+impl UseStairsAction {
+    /// Creates a new stair usage action.
+    pub fn new(actor: EntityId, direction: StairDirection) -> Self {
+        Self {
+            actor,
+            direction,
+            metadata: HashMap::new(),
+        }
+    }
+}
+
+impl Action for UseStairsAction {
+    fn execute(&self, game_state: &mut crate::GameState) -> ThatchResult<Vec<GameEvent>> {
+        let mut events = Vec::new();
+        
+        // Check if player is on appropriate stairs
+        if let Some(player) = game_state.get_player() {
+            let player_pos = player.position();
+            
+            if let Some(level) = game_state.world.current_level() {
+                if let Some(tile) = level.get_tile(player_pos) {
+                    let valid_stairs = match self.direction {
+                        StairDirection::Up => tile.tile_type == crate::TileType::StairsUp,
+                        StairDirection::Down => tile.tile_type == crate::TileType::StairsDown,
+                    };
+                    
+                    if !valid_stairs {
+                        return Err(ThatchError::InvalidAction(
+                            "No appropriate stairs at current position".to_string(),
+                        ));
+                    }
+                }
+            }
+        }
+
+        // Attempt to use stairs
+        let level_changed = game_state.use_stairs(self.direction.clone())?;
+        
+        if level_changed {
+            events.push(GameEvent::PlayerChangedLevel {
+                player_id: self.actor,
+                old_level: game_state.world.current_level_id.saturating_sub(
+                    if self.direction == StairDirection::Down { 1 } else { 0 }
+                ) + if self.direction == StairDirection::Up { 1 } else { 0 },
+                new_level: game_state.world.current_level_id,
+                direction: self.direction.clone(),
+            });
+        } else {
+            // Game ended
+            match game_state.get_completion_state() {
+                crate::GameCompletionState::EscapedEarly => {
+                    events.push(GameEvent::GameEnded {
+                        ending_type: "escaped_early".to_string(),
+                        message: "You escaped the dungeon with your life, but left much treasure behind...".to_string(),
+                    });
+                }
+                crate::GameCompletionState::CompletedDungeon => {
+                    events.push(GameEvent::GameEnded {
+                        ending_type: "victory".to_string(),
+                        message: "Congratulations! You've conquered the deepest depths of the dungeon!".to_string(),
+                    });
+                }
+                _ => {}
+            }
+        }
+
+        Ok(events)
+    }
+
+    fn validate(&self, game_state: &crate::GameState) -> ThatchResult<()> {
+        // Check if actor exists
+        if !game_state.entity_exists(self.actor) {
+            return Err(ThatchError::InvalidAction(
+                "Actor entity does not exist".to_string(),
+            ));
+        }
+
+        // Check if game is still in progress
+        if game_state.is_game_ended() {
+            return Err(ThatchError::InvalidAction(
+                "Cannot use stairs when game has ended".to_string(),
+            ));
+        }
+
+        Ok(())
+    }
+
+    fn actor(&self) -> EntityId {
+        self.actor
+    }
+
+    fn action_type(&self) -> ActionType {
+        ActionType::UseStairs {
+            direction: self.direction.clone(),
+        }
+    }
+
+    fn to_json(&self) -> ThatchResult<String> {
+        serde_json::to_string(self).map_err(ThatchError::from)
+    }
+
+    fn time_cost(&self) -> u32 {
+        100 // Standard time cost
+    }
+
+    fn metadata(&self) -> &HashMap<String, String> {
+        &self.metadata
+    }
+}
+
 /// Concrete action types for serialization and queue management.
 ///
 /// This enum represents all concrete action implementations that can be
@@ -435,6 +556,7 @@ pub enum ConcreteAction {
     Move(MoveAction),
     Attack(AttackAction),
     Wait(WaitAction),
+    UseStairs(UseStairsAction),
 }
 
 impl ConcreteAction {
@@ -447,6 +569,7 @@ impl ConcreteAction {
             ConcreteAction::Move(action) => action.execute(game_state),
             ConcreteAction::Attack(action) => action.execute(game_state),
             ConcreteAction::Wait(action) => action.execute(game_state),
+            ConcreteAction::UseStairs(action) => action.execute(game_state),
         }
     }
 
@@ -456,6 +579,7 @@ impl ConcreteAction {
             ConcreteAction::Move(action) => action.action_type(),
             ConcreteAction::Attack(action) => action.action_type(),
             ConcreteAction::Wait(action) => action.action_type(),
+            ConcreteAction::UseStairs(action) => action.action_type(),
         }
     }
 
@@ -465,6 +589,7 @@ impl ConcreteAction {
             ConcreteAction::Move(action) => action.actor(),
             ConcreteAction::Attack(action) => action.actor(),
             ConcreteAction::Wait(action) => action.actor(),
+            ConcreteAction::UseStairs(action) => action.actor(),
         }
     }
 }

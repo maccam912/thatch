@@ -46,6 +46,8 @@ pub struct GameState {
     pub rng_seed: u64,
     /// LLDM integration state
     pub lldm_state: LldmState,
+    /// Current game completion state
+    pub completion_state: GameCompletionState,
 }
 
 /// Game statistics tracking player progress and achievements.
@@ -116,6 +118,19 @@ impl Default for GameStatistics {
     fn default() -> Self {
         Self::new()
     }
+}
+
+/// Game completion state for handling endings.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum GameCompletionState {
+    /// Game is still in progress
+    Playing,
+    /// Player escaped from level 1 (medium ending)
+    EscapedEarly,
+    /// Player reached bottom level and won (good ending)
+    CompletedDungeon,
+    /// Player died
+    PlayerDied,
 }
 
 /// State for LLDM (LLM Dungeon Master) integration.
@@ -210,6 +225,7 @@ impl GameState {
                     use_cache: true,
                 },
             },
+            completion_state: GameCompletionState::Playing,
         }
     }
 
@@ -309,6 +325,7 @@ impl GameState {
                     use_cache: true,
                 },
             },
+            completion_state: GameCompletionState::Playing,
         })
     }
 
@@ -619,6 +636,158 @@ impl GameState {
     /// Loads game state from JSON.
     pub fn load_from_json(json: &str) -> ThatchResult<Self> {
         serde_json::from_str(json).map_err(ThatchError::from)
+    }
+
+    /// Handles level progression when player uses stairs.
+    ///
+    /// Returns true if the level change was successful, false if it triggers a game ending.
+    pub fn use_stairs(&mut self, direction: crate::StairDirection) -> ThatchResult<bool> {
+        let current_level_id = self.world.current_level_id;
+        
+        match direction {
+            crate::StairDirection::Up => {
+                if current_level_id == 0 {
+                    // Going up from level 1 triggers escape ending
+                    self.completion_state = GameCompletionState::EscapedEarly;
+                    return Ok(false);
+                } else {
+                    // Go back to previous level
+                    let target_level_id = current_level_id - 1;
+                    self.change_to_level(target_level_id)?;
+                }
+            }
+            crate::StairDirection::Down => {
+                if current_level_id >= 25 {
+                    // Going down from level 26 (0-indexed 25) triggers win ending
+                    self.completion_state = GameCompletionState::CompletedDungeon;
+                    return Ok(false);
+                } else {
+                    // Go to next level (generate if needed)
+                    let target_level_id = current_level_id + 1;
+                    self.change_to_level(target_level_id)?;
+                }
+            }
+        }
+
+        Ok(true)
+    }
+
+    /// Changes to the specified level, generating it if it doesn't exist.
+    fn change_to_level(&mut self, level_id: u32) -> ThatchResult<()> {
+        // If level doesn't exist, generate it
+        if !self.world.levels.contains_key(&level_id) {
+            self.generate_level(level_id)?;
+        }
+
+        // Move player entity from current level to target level
+        if let Some(player_id) = self.player_id {
+            // Remove from current level
+            if let Some(current_level) = self.world.current_level_mut() {
+                current_level.remove_entity(&player_id);
+            }
+
+            // Change level
+            self.world.change_level(level_id)?;
+
+            // Add to new level and move to spawn point
+            if let Some(new_level) = self.world.current_level_mut() {
+                new_level.add_entity(player_id);
+                let spawn_pos = new_level.player_spawn;
+                
+                // Update entity position
+                let old_pos = if let Some(player) = self.get_player() {
+                    player.position()
+                } else {
+                    spawn_pos // fallback
+                };
+                
+                self.remove_entity_from_position_index(player_id, old_pos);
+                if let Some(player) = self.get_player_mut() {
+                    player.set_position(spawn_pos);
+                }
+                self.add_entity_to_position_index(player_id, spawn_pos);
+            }
+
+            // Update statistics
+            if level_id > self.statistics.max_depth_reached {
+                self.statistics.max_depth_reached = level_id;
+                self.statistics.levels_explored += 1;
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Generates a new level with the specified ID.
+    fn generate_level(&mut self, level_id: u32) -> ThatchResult<()> {
+        use crate::{GenerationConfig, RoomCorridorGenerator, Generator};
+        use rand::{rngs::StdRng, SeedableRng};
+
+        // Create level-specific seed based on world seed and level ID
+        let level_seed = self.rng_seed.wrapping_add(level_id as u64 * 1000);
+        let mut rng = StdRng::seed_from_u64(level_seed);
+        
+        let config = GenerationConfig::default();
+        let generator = RoomCorridorGenerator::new();
+        
+        let mut level = generator.generate(&config, &mut rng)?;
+        level.id = level_id;
+        
+        // Set level name based on depth
+        level.name = Some(format!("Dungeon Level {}", level_id + 1));
+        
+        self.world.add_level(level);
+        Ok(())
+    }
+
+    /// Resets the game state for a new game.
+    pub fn reset_for_new_game(&mut self) -> ThatchResult<()> {
+        // Clear all levels except level 0
+        self.world.levels.retain(|&id, _| id == 0);
+        self.world.current_level_id = 0;
+        self.world.max_depth = 0;
+
+        // Regenerate level 0
+        self.generate_level(0)?;
+
+        // Reset player position to spawn
+        if let Some(player_id) = self.player_id {
+            let spawn_pos = if let Some(level) = self.world.current_level() {
+                level.player_spawn
+            } else {
+                Position::new(0, 0)
+            };
+            
+            let old_pos = if let Some(player) = self.get_player() {
+                player.position()
+            } else {
+                spawn_pos // fallback
+            };
+            
+            self.remove_entity_from_position_index(player_id, old_pos);
+            if let Some(player) = self.get_player_mut() {
+                player.set_position(spawn_pos);
+            }
+            self.add_entity_to_position_index(player_id, spawn_pos);
+        }
+
+        // Reset game state
+        self.completion_state = GameCompletionState::Playing;
+        self.turn_number = 0;
+        self.statistics = GameStatistics::new();
+        self.game_start_time = Some(Instant::now());
+
+        Ok(())
+    }
+
+    /// Checks if the game has ended.
+    pub fn is_game_ended(&self) -> bool {
+        self.completion_state != GameCompletionState::Playing
+    }
+
+    /// Gets the current completion state.
+    pub fn get_completion_state(&self) -> &GameCompletionState {
+        &self.completion_state
     }
 }
 

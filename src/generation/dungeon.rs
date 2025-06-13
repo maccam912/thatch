@@ -473,6 +473,80 @@ impl RoomCorridorGenerator {
         Ok(false)
     }
 
+    /// Fills all unreachable floor tiles with walls using flood fill from spawn position.
+    ///
+    /// This ensures that only reachable areas remain as floor tiles, creating a more
+    /// compact and connected dungeon layout.
+    fn fill_unreachable_areas(&self, level: &mut Level) -> ThatchResult<()> {
+        let spawn_pos = level.player_spawn;
+        
+        // Find all reachable floor tiles using flood fill
+        let reachable_tiles = self.flood_fill_reachable(level, spawn_pos)?;
+        
+        // Convert all unreachable floor tiles to walls
+        for y in 0..level.height as i32 {
+            for x in 0..level.width as i32 {
+                let pos = Position::new(x, y);
+                
+                if let Some(tile) = level.get_tile(pos) {
+                    // If it's a floor tile but not reachable, convert to wall
+                    if tile.tile_type.is_passable() && !reachable_tiles.contains(&pos) {
+                        level.set_tile(pos, Tile::wall())?;
+                    }
+                }
+            }
+        }
+        
+        Ok(())
+    }
+
+    /// Performs flood fill from the spawn position to find all reachable tiles.
+    ///
+    /// Uses breadth-first search to explore all passable tiles reachable from the spawn.
+    fn flood_fill_reachable(&self, level: &Level, start: Position) -> ThatchResult<HashSet<Position>> {
+        let mut reachable = HashSet::new();
+        let mut queue = VecDeque::new();
+        
+        // Start from spawn position if it's passable
+        if let Some(start_tile) = level.get_tile(start) {
+            if start_tile.tile_type.is_passable() {
+                queue.push_back(start);
+                reachable.insert(start);
+            } else {
+                // If spawn is not passable, return empty set (shouldn't happen in normal generation)
+                return Ok(reachable);
+            }
+        } else {
+            return Ok(reachable);
+        }
+        
+        // Breadth-first search to find all reachable tiles
+        while let Some(current) = queue.pop_front() {
+            // Check all cardinal neighbors
+            for neighbor in current.cardinal_adjacent_positions() {
+                // Skip if already visited
+                if reachable.contains(&neighbor) {
+                    continue;
+                }
+                
+                // Skip if out of bounds
+                if !level.is_valid_position(neighbor) {
+                    continue;
+                }
+                
+                // Check if tile is passable
+                if let Some(tile) = level.get_tile(neighbor) {
+                    if tile.tile_type.is_passable() {
+                        reachable.insert(neighbor);
+                        queue.push_back(neighbor);
+                    }
+                }
+            }
+        }
+        
+        Ok(reachable)
+    }
+
     /// Adds stairs to connect between levels.
     fn add_stairs(
         &self,
@@ -525,17 +599,20 @@ impl Generator<Level> for RoomCorridorGenerator {
         // Step 3: Progressively add walls while maintaining connectivity
         self.progressive_wall_placement(&mut level, &rooms, rng)?;
 
+        // Set player spawn point to first room
+        if !rooms.is_empty() {
+            level.player_spawn = rooms[0].center();
+        }
+
         // Step 4: Add stairs
         self.add_stairs(&mut level, &rooms, config, rng)?;
+
+        // Step 5: Fill unreachable areas with walls
+        self.fill_unreachable_areas(&mut level)?;
 
         // Apply LLDM enhancements if enabled
         if config.use_lldm {
             // LLDM enhancement would be implemented here
-        }
-
-        // Set player spawn point to first room
-        if !rooms.is_empty() {
-            level.player_spawn = rooms[0].center();
         }
 
         // Final validation
@@ -694,5 +771,64 @@ mod tests {
         // Invalid level with no floor tiles
         let empty_level = Level::new(0, 10, 10);
         assert!(generator.validate(&empty_level, &config).is_err());
+    }
+
+    #[test]
+    fn test_fill_unreachable_areas() {
+        let generator = RoomCorridorGenerator::new();
+        let mut level = Level::new(0, 10, 10);
+        
+        // Create a connected area around spawn
+        let spawn_pos = Position::new(5, 5);
+        level.player_spawn = spawn_pos;
+        level.set_tile(spawn_pos, Tile::floor()).unwrap();
+        level.set_tile(Position::new(5, 6), Tile::floor()).unwrap();
+        level.set_tile(Position::new(6, 5), Tile::floor()).unwrap();
+        
+        // Create an isolated area that should be filled
+        level.set_tile(Position::new(2, 2), Tile::floor()).unwrap();
+        level.set_tile(Position::new(2, 3), Tile::floor()).unwrap();
+        
+        // Fill unreachable areas
+        generator.fill_unreachable_areas(&mut level).unwrap();
+        
+        // Check that spawn area is still floor
+        assert_eq!(level.get_tile(spawn_pos).unwrap().tile_type, TileType::Floor);
+        assert_eq!(level.get_tile(Position::new(5, 6)).unwrap().tile_type, TileType::Floor);
+        assert_eq!(level.get_tile(Position::new(6, 5)).unwrap().tile_type, TileType::Floor);
+        
+        // Check that isolated area was filled with walls
+        assert_eq!(level.get_tile(Position::new(2, 2)).unwrap().tile_type, TileType::Wall);
+        assert_eq!(level.get_tile(Position::new(2, 3)).unwrap().tile_type, TileType::Wall);
+    }
+
+    #[test]
+    fn test_flood_fill_reachable() {
+        let generator = RoomCorridorGenerator::new();
+        let mut level = Level::new(0, 10, 10);
+        
+        // Create a connected area
+        let start_pos = Position::new(5, 5);
+        level.set_tile(start_pos, Tile::floor()).unwrap();
+        level.set_tile(Position::new(5, 6), Tile::floor()).unwrap();
+        level.set_tile(Position::new(6, 5), Tile::floor()).unwrap();
+        level.set_tile(Position::new(4, 5), Tile::floor()).unwrap();
+        
+        // Create isolated floor tiles
+        level.set_tile(Position::new(2, 2), Tile::floor()).unwrap();
+        
+        let reachable = generator.flood_fill_reachable(&level, start_pos).unwrap();
+        
+        // Should include connected tiles
+        assert!(reachable.contains(&start_pos));
+        assert!(reachable.contains(&Position::new(5, 6)));
+        assert!(reachable.contains(&Position::new(6, 5)));
+        assert!(reachable.contains(&Position::new(4, 5)));
+        
+        // Should NOT include isolated tiles
+        assert!(!reachable.contains(&Position::new(2, 2)));
+        
+        // Should have exactly 4 reachable tiles
+        assert_eq!(reachable.len(), 4);
     }
 }
