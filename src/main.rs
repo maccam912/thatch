@@ -1,9 +1,9 @@
 //! # Thatch Roguelike Main Entry Point
 //!
-//! Initializes the game state, sets up terminal rendering, and runs the main game loop.
+//! Initializes the game state, sets up macroquad rendering, and runs the main game loop.
 
 use clap::Parser;
-use std::time::{Duration, Instant};
+use macroquad::prelude::*;
 use thatch::{
     Entity, GameState, GenerationConfig, Generator, PlayerCharacter, RoomCorridorGenerator,
     ThatchError, ThatchResult,
@@ -50,7 +50,8 @@ struct Args {
     log_level: String,
 }
 
-fn main() -> ThatchResult<()> {
+#[macroquad::main("Thatch Roguelike")]
+async fn main() -> ThatchResult<()> {
     let args = Args::parse();
 
     // Initialize logging
@@ -75,12 +76,12 @@ fn main() -> ThatchResult<()> {
 
     if args.ai_player {
         info!("Starting in AI player mode");
-        return run_ai_player_mode(&args);
+        return run_ai_player_mode(&args).await;
     }
 
     // Normal game mode
     info!("Starting in normal game mode");
-    run_game(&args)
+    run_game(&args).await
 }
 
 /// Initializes the logging system based on the specified log level.
@@ -111,27 +112,22 @@ fn initialize_logging(log_level: &str) -> ThatchResult<()> {
     Ok(())
 }
 
-/// Runs the main game loop with terminal interface.
-fn run_game(args: &Args) -> ThatchResult<()> {
-    // Initialize the display system
-    info!("Initializing terminal display");
-    let mut display = thatch::Display::new()?;
-
+/// Runs the main game loop with macroquad graphics.
+async fn run_game(args: &Args) -> ThatchResult<()> {
+    info!("Initializing macroquad display");
+    
+    // Configure window
+    request_new_screen_size(1024.0, 768.0);
+    
     // Initialize input handler
     let input_handler = thatch::InputHandler::new();
 
-    let result = run_game_loop(args, &mut display, &input_handler);
-
-    // Cleanup terminal
-    display.cleanup()?;
-
-    result
+    run_game_loop(args, &input_handler).await
 }
 
 /// Main game loop implementation.
-fn run_game_loop(
+async fn run_game_loop(
     args: &Args,
-    display: &mut thatch::Display,
     input_handler: &thatch::InputHandler,
 ) -> ThatchResult<()> {
     // Generate a proper dungeon level
@@ -168,37 +164,24 @@ fn run_game_loop(
 
     info!("Player created and placed at {:?}", player_pos);
 
-    display.add_message("Welcome to Thatch Roguelike!".to_string());
-    display.add_message("Use hjkl or arrow keys to move, q to quit".to_string());
+    // Initialize display system
+    let mut display = thatch::MacroquadDisplay::new().await?;
 
-    // Frame rate limiting
-    let target_frame_time = Duration::from_millis(1000 / 60); // 60 FPS
+    display.add_message("Welcome to Thatch Roguelike!".to_string());
+    display.add_message("Use WASD or arrow keys to move, ESC to quit".to_string());
 
     // Main game loop
     loop {
-        let frame_start = Instant::now();
-
-        // Render the game
-        display.render_game(&game_state)?;
-
-        // Process input (non-blocking)
-        if let Some(input) = input_handler.wait_for_input()? {
+        // Handle input
+        if let Some(input) = input_handler.get_input() {
             match input {
                 thatch::PlayerInput::Quit => {
                     info!("Player quit the game");
                     break;
                 }
 
-                thatch::PlayerInput::Resize {
-                    width: _,
-                    height: _,
-                } => {
-                    display.update_size()?;
-                    continue;
-                }
-
                 thatch::PlayerInput::Help => {
-                    display.add_message("Help: hjkl/arrows=move, q=quit, .=wait".to_string());
+                    display.add_message("Help: WASD/arrows=move, ESC=quit, SPACE=wait".to_string());
                     continue;
                 }
 
@@ -239,11 +222,10 @@ fn run_game_loop(
             }
         }
 
-        // Frame rate limiting
-        let frame_elapsed = frame_start.elapsed();
-        if frame_elapsed < target_frame_time {
-            std::thread::sleep(target_frame_time - frame_elapsed);
-        }
+        // Render the game
+        display.render_game(&game_state).await?;
+
+        next_frame().await;
     }
 
     info!("Game loop ended");
@@ -251,7 +233,7 @@ fn run_game_loop(
 }
 
 /// Runs AI player mode for testing and demonstration.
-fn run_ai_player_mode(_args: &Args) -> ThatchResult<()> {
+async fn run_ai_player_mode(_args: &Args) -> ThatchResult<()> {
     info!("AI player mode not yet implemented");
     // TODO: Implement AI player
     Ok(())

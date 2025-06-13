@@ -1,14 +1,9 @@
 //! # User Interface Elements
 //!
-//! UI components for health bars, inventory, messages, and other interface elements.
+//! UI components for health bars, inventory, messages, and other interface elements using macroquad.
 
 use crate::{GameCompletionState, ThatchResult};
-use crossterm::{
-    cursor,
-    style::{Color, ResetColor, SetBackgroundColor, SetForegroundColor},
-    terminal, ExecutableCommand,
-};
-use std::io::Write;
+use macroquad::prelude::*;
 
 /// UI component for rendering game screens.
 pub struct UI;
@@ -20,141 +15,102 @@ impl UI {
     }
 
     /// Renders the game over screen for early escape.
-    pub fn render_escape_screen<W: Write>(&self, writer: &mut W) -> ThatchResult<()> {
-        self.clear_screen(writer)?;
+    pub async fn render_escape_screen(&self) -> ThatchResult<()> {
+        clear_background(BLACK);
         
-        let (width, height) = terminal::size()?;
-        let center_x = width / 2;
-        let center_y = height / 2;
+        let center_x = screen_width() / 2.0;
+        let center_y = screen_height() / 2.0;
 
         // Title
-        writer.execute(cursor::MoveTo(center_x - 10, center_y - 8))?;
-        writer.execute(SetForegroundColor(Color::Yellow))?;
-        writeln!(writer, "═══ ESCAPED ═══")?;
+        draw_text("═══ ESCAPED ═══", center_x - 100.0, center_y - 120.0, 32.0, YELLOW);
 
         // Story text
-        writer.execute(cursor::MoveTo(center_x - 25, center_y - 5))?;
-        writer.execute(SetForegroundColor(Color::White))?;
-        writeln!(writer, "You emerge from the dungeon's entrance, gasping")?;
-        writer.execute(cursor::MoveTo(center_x - 25, center_y - 4))?;
-        writeln!(writer, "for fresh air. Your life is saved, but you left")?;
-        writer.execute(cursor::MoveTo(center_x - 25, center_y - 3))?;
-        writeln!(writer, "behind untold treasures in the depths below.")?;
+        draw_text("You emerge from the dungeon's entrance, gasping", center_x - 250.0, center_y - 70.0, 20.0, WHITE);
+        draw_text("for fresh air. Your life is saved, but you left", center_x - 250.0, center_y - 50.0, 20.0, WHITE);
+        draw_text("behind untold treasures in the depths below.", center_x - 250.0, center_y - 30.0, 20.0, WHITE);
 
-        writer.execute(cursor::MoveTo(center_x - 25, center_y - 1))?;
-        writer.execute(SetForegroundColor(Color::Cyan))?;
-        writeln!(writer, "Sometimes living to fight another day is victory enough.")?;
+        draw_text("Sometimes living to fight another day is victory enough.", center_x - 250.0, center_y + 10.0, 20.0, SKYBLUE);
 
         // Controls
-        writer.execute(cursor::MoveTo(center_x - 15, center_y + 3))?;
-        writer.execute(SetForegroundColor(Color::Green))?;
-        writeln!(writer, "Press 'n' for New Game")?;
-        writer.execute(cursor::MoveTo(center_x - 15, center_y + 4))?;
-        writeln!(writer, "Press 'q' to Quit")?;
+        draw_text("Press 'N' for New Game", center_x - 120.0, center_y + 70.0, 20.0, GREEN);
+        draw_text("Press 'ESC' to Quit", center_x - 120.0, center_y + 90.0, 20.0, GREEN);
 
-        writer.execute(ResetColor)?;
-        writer.flush()?;
         Ok(())
     }
 
     /// Renders the victory screen for completing the dungeon.
-    pub fn render_victory_screen<W: Write>(&self, writer: &mut W) -> ThatchResult<()> {
-        self.clear_screen(writer)?;
+    pub async fn render_victory_screen(&self) -> ThatchResult<()> {
+        clear_background(BLACK);
         
-        let (width, height) = terminal::size()?;
-        let center_x = width / 2;
-        let center_y = height / 2;
+        let center_x = screen_width() / 2.0;
+        let center_y = screen_height() / 2.0;
 
         // Title
-        writer.execute(cursor::MoveTo(center_x - 12, center_y - 8))?;
-        writer.execute(SetForegroundColor(Color::Magenta))?;
-        writeln!(writer, "♦═══ VICTORY! ═══♦")?;
+        draw_text("♦═══ VICTORY! ═══♦", center_x - 120.0, center_y - 120.0, 32.0, MAGENTA);
 
         // Story text
-        writer.execute(cursor::MoveTo(center_x - 30, center_y - 5))?;
-        writer.execute(SetForegroundColor(Color::White))?;
-        writeln!(writer, "You have conquered the deepest depths of the ancient")?;
-        writer.execute(cursor::MoveTo(center_x - 30, center_y - 4))?;
-        writeln!(writer, "dungeon! The treasures of 26 levels are yours, and")?;
-        writer.execute(cursor::MoveTo(center_x - 30, center_y - 3))?;
-        writeln!(writer, "your name will be sung by bards for generations.")?;
+        draw_text("You have conquered the deepest depths of the ancient", center_x - 300.0, center_y - 70.0, 20.0, WHITE);
+        draw_text("dungeon! The treasures of 26 levels are yours, and", center_x - 300.0, center_y - 50.0, 20.0, WHITE);
+        draw_text("your name will be sung by bards for generations.", center_x - 300.0, center_y - 30.0, 20.0, WHITE);
 
-        writer.execute(cursor::MoveTo(center_x - 20, center_y - 1))?;
-        writer.execute(SetForegroundColor(Color::Yellow))?;
-        writeln!(writer, "You are a true master of the depths!")?;
+        draw_text("You are a true master of the depths!", center_x - 200.0, center_y + 10.0, 20.0, YELLOW);
 
         // Controls
-        writer.execute(cursor::MoveTo(center_x - 15, center_y + 3))?;
-        writer.execute(SetForegroundColor(Color::Green))?;
-        writeln!(writer, "Press 'n' for New Game")?;
-        writer.execute(cursor::MoveTo(center_x - 15, center_y + 4))?;
-        writeln!(writer, "Press 'q' to Quit")?;
+        draw_text("Press 'N' for New Game", center_x - 120.0, center_y + 70.0, 20.0, GREEN);
+        draw_text("Press 'ESC' to Quit", center_x - 120.0, center_y + 90.0, 20.0, GREEN);
 
-        writer.execute(ResetColor)?;
-        writer.flush()?;
         Ok(())
     }
 
     /// Renders tooltips for special tiles.
-    pub fn render_tile_tooltip<W: Write>(
+    pub fn render_tile_tooltip(
         &self,
-        writer: &mut W,
         tile_type: &crate::TileType,
-        x: u16,
-        y: u16,
+        x: f32,
+        y: f32,
     ) -> ThatchResult<()> {
         let tooltip_text = match tile_type {
             crate::TileType::StairsUp => {
-                "Stairs Up - Press '<' to ascend (Warning: Exiting at level 1 ends the game!)"
+                "Stairs Up - Press '1' to ascend (Warning: Exiting at level 1 ends the game!)"
             }
             crate::TileType::StairsDown => {
-                "Stairs Down - Press '>' to descend to the next level"
+                "Stairs Down - Press '2' to descend to the next level"
             }
             crate::TileType::Door { is_open } => {
                 if *is_open {
-                    "Open Door - Press 'c' to close"
+                    "Open Door - Press 'C' to close"
                 } else {
-                    "Closed Door - Press 'o' to open"
+                    "Closed Door - Press 'O' to open"
                 }
             }
             crate::TileType::Special { description } => description,
             _ => return Ok(()), // No tooltip for regular tiles
         };
 
-        // Render tooltip box
-        writer.execute(cursor::MoveTo(x, y))?;
-        writer.execute(SetBackgroundColor(Color::DarkBlue))?;
-        writer.execute(SetForegroundColor(Color::White))?;
-        write!(writer, " {} ", tooltip_text)?;
-        writer.execute(ResetColor)?;
+        // Render tooltip box with background
+        let text_width = tooltip_text.len() as f32 * 8.0;
+        draw_rectangle(x, y - 20.0, text_width + 10.0, 25.0, Color::new(0.0, 0.0, 0.5, 0.8));
+        draw_text(tooltip_text, x + 5.0, y - 5.0, 16.0, WHITE);
         
         Ok(())
     }
 
     /// Renders the game ending screen based on completion state.
-    pub fn render_ending_screen<W: Write>(
+    pub async fn render_ending_screen(
         &self,
-        writer: &mut W,
         completion_state: &GameCompletionState,
     ) -> ThatchResult<()> {
         match completion_state {
-            GameCompletionState::EscapedEarly => self.render_escape_screen(writer),
-            GameCompletionState::CompletedDungeon => self.render_victory_screen(writer),
+            GameCompletionState::EscapedEarly => self.render_escape_screen().await,
+            GameCompletionState::CompletedDungeon => self.render_victory_screen().await,
             GameCompletionState::PlayerDied => {
                 // TODO: Implement death screen
-                self.render_escape_screen(writer) // Placeholder
+                self.render_escape_screen().await // Placeholder
             }
             GameCompletionState::Playing => {
                 // Should not render ending screen if still playing
                 Ok(())
             }
         }
-    }
-
-    /// Clears the screen.
-    fn clear_screen<W: Write>(&self, writer: &mut W) -> ThatchResult<()> {
-        writer.execute(terminal::Clear(terminal::ClearType::All))?;
-        writer.execute(cursor::MoveTo(0, 0))?;
-        Ok(())
     }
 }

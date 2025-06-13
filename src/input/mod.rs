@@ -10,8 +10,7 @@ use crate::{
     ConcreteAction, Direction, Entity, GameState, MoveAction, Position, ThatchError, ThatchResult,
     WaitAction,
 };
-use crossterm::event::{self, Event, KeyCode, KeyEvent};
-use std::time::Duration;
+use macroquad::prelude::*;
 
 /// Input handler for processing player commands.
 ///
@@ -39,97 +38,112 @@ impl InputHandler {
         }
     }
 
-    /// Waits for and processes the next input event.
+    /// Gets the current input if any key is pressed.
     ///
-    /// Returns the corresponding game action, or None if no valid action
-    /// was triggered by the input.
-    pub fn wait_for_input(&self) -> ThatchResult<Option<PlayerInput>> {
-        // Poll for events with a very short timeout for smooth rendering
-        if event::poll(Duration::from_millis(1)).map_err(ThatchError::Io)? {
-            match event::read().map_err(ThatchError::Io)? {
-                Event::Key(key_event) => Ok(self.process_key_event(key_event)),
-                Event::Resize(width, height) => Ok(Some(PlayerInput::Resize { width, height })),
-                _ => Ok(None), // Ignore other event types for now
-            }
-        } else {
-            Ok(None)
-        }
+    /// Returns the corresponding player input, or None if no key is pressed.
+    pub fn get_input(&self) -> Option<PlayerInput> {
+        self.process_macroquad_input()
     }
 
-    /// Processes a keyboard event and returns the corresponding player input.
-    fn process_key_event(&self, key_event: KeyEvent) -> Option<PlayerInput> {
-        use crossterm::event::KeyEventKind;
-
-        // Only process key press events, ignore key release events
-        if key_event.kind != KeyEventKind::Press {
-            return None;
+    /// Processes macroquad input and returns the corresponding player input.
+    fn process_macroquad_input(&self) -> Option<PlayerInput> {
+        // Check for quit
+        if is_key_pressed(KeyCode::Escape) {
+            return Some(PlayerInput::Quit);
         }
 
-        match key_event.code {
-            // Quit game
-            KeyCode::Char('q') | KeyCode::Char('Q') => Some(PlayerInput::Quit),
-
-            // Movement keys - Arrow keys
-            KeyCode::Up => Some(PlayerInput::Move(Position::new(0, -1))),
-            KeyCode::Down => Some(PlayerInput::Move(Position::new(0, 1))),
-            KeyCode::Left => Some(PlayerInput::Move(Position::new(-1, 0))),
-            KeyCode::Right => Some(PlayerInput::Move(Position::new(1, 0))),
-
-            // Movement keys - Vi style (hjkl)
-            KeyCode::Char('h') if self.vi_keys_enabled => {
-                Some(PlayerInput::Move(Position::new(-1, 0)))
-            }
-            KeyCode::Char('j') if self.vi_keys_enabled => {
-                Some(PlayerInput::Move(Position::new(0, 1)))
-            }
-            KeyCode::Char('k') if self.vi_keys_enabled => {
-                Some(PlayerInput::Move(Position::new(0, -1)))
-            }
-            KeyCode::Char('l') if self.vi_keys_enabled => {
-                Some(PlayerInput::Move(Position::new(1, 0)))
-            }
-
-            // Diagonal movement (Vi style)
-            KeyCode::Char('y') if self.vi_keys_enabled => {
-                Some(PlayerInput::Move(Position::new(-1, -1)))
-            }
-            KeyCode::Char('u') if self.vi_keys_enabled => {
-                Some(PlayerInput::Move(Position::new(1, -1)))
-            }
-            KeyCode::Char('b') if self.vi_keys_enabled => {
-                Some(PlayerInput::Move(Position::new(-1, 1)))
-            }
-            KeyCode::Char('n') if self.vi_keys_enabled => {
-                Some(PlayerInput::Move(Position::new(1, 1)))
-            }
-
-            // Wait/rest
-            KeyCode::Char('.') | KeyCode::Char(' ') => Some(PlayerInput::Wait),
-
-            // Help
-            KeyCode::Char('?') => Some(PlayerInput::Help),
-
-            // Inventory
-            KeyCode::Char('i') => Some(PlayerInput::ShowInventory),
-
-            // Pick up item
-            KeyCode::Char(',') | KeyCode::Char('g') => Some(PlayerInput::PickUp),
-
-            // Escape (cancel current action)
-            KeyCode::Esc => Some(PlayerInput::Cancel),
-
-            // Enter (confirm action)
-            KeyCode::Enter => Some(PlayerInput::Confirm),
-
-            // Stairs
-            KeyCode::Char('<') => Some(PlayerInput::UseStairs(crate::StairDirection::Up)),
-            KeyCode::Char('>') => Some(PlayerInput::UseStairs(crate::StairDirection::Down)),
-
-            // New game (when game ended)
-            KeyCode::Char('n') | KeyCode::Char('N') => Some(PlayerInput::NewGame),
-
-            _ => None, // Unrecognized key
+        // Movement keys - Arrow keys
+        if is_key_pressed(KeyCode::Up) {
+            return Some(PlayerInput::Move(Position::new(0, -1)));
         }
+        if is_key_pressed(KeyCode::Down) {
+            return Some(PlayerInput::Move(Position::new(0, 1)));
+        }
+        if is_key_pressed(KeyCode::Left) {
+            return Some(PlayerInput::Move(Position::new(-1, 0)));
+        }
+        if is_key_pressed(KeyCode::Right) {
+            return Some(PlayerInput::Move(Position::new(1, 0)));
+        }
+
+        // Movement keys - WASD
+        if is_key_pressed(KeyCode::W) {
+            return Some(PlayerInput::Move(Position::new(0, -1)));
+        }
+        if is_key_pressed(KeyCode::S) {
+            return Some(PlayerInput::Move(Position::new(0, 1)));
+        }
+        if is_key_pressed(KeyCode::A) {
+            return Some(PlayerInput::Move(Position::new(-1, 0)));
+        }
+        if is_key_pressed(KeyCode::D) {
+            return Some(PlayerInput::Move(Position::new(1, 0)));
+        }
+
+        // Movement keys - Vi style (hjkl) if enabled
+        if self.vi_keys_enabled {
+            if is_key_pressed(KeyCode::H) {
+                return Some(PlayerInput::Move(Position::new(-1, 0)));
+            }
+            if is_key_pressed(KeyCode::J) {
+                return Some(PlayerInput::Move(Position::new(0, 1)));
+            }
+            if is_key_pressed(KeyCode::K) {
+                return Some(PlayerInput::Move(Position::new(0, -1)));
+            }
+            if is_key_pressed(KeyCode::L) {
+                return Some(PlayerInput::Move(Position::new(1, 0)));
+            }
+
+            // Diagonal movement
+            if is_key_pressed(KeyCode::Y) {
+                return Some(PlayerInput::Move(Position::new(-1, -1)));
+            }
+            if is_key_pressed(KeyCode::U) {
+                return Some(PlayerInput::Move(Position::new(1, -1)));
+            }
+            if is_key_pressed(KeyCode::B) {
+                return Some(PlayerInput::Move(Position::new(-1, 1)));
+            }
+            if is_key_pressed(KeyCode::N) {
+                return Some(PlayerInput::Move(Position::new(1, 1)));
+            }
+        }
+
+        // Wait/rest
+        if is_key_pressed(KeyCode::Space) || is_key_pressed(KeyCode::Period) {
+            return Some(PlayerInput::Wait);
+        }
+
+        // Help
+        if is_key_pressed(KeyCode::F1) {
+            return Some(PlayerInput::Help);
+        }
+
+        // Inventory
+        if is_key_pressed(KeyCode::I) {
+            return Some(PlayerInput::ShowInventory);
+        }
+
+        // Pick up item
+        if is_key_pressed(KeyCode::Comma) || is_key_pressed(KeyCode::G) {
+            return Some(PlayerInput::PickUp);
+        }
+
+        // Enter (confirm action)
+        if is_key_pressed(KeyCode::Enter) {
+            return Some(PlayerInput::Confirm);
+        }
+
+        // Stairs - using number keys since < > are hard to press
+        if is_key_pressed(KeyCode::Key1) {
+            return Some(PlayerInput::UseStairs(crate::StairDirection::Up));
+        }
+        if is_key_pressed(KeyCode::Key2) {
+            return Some(PlayerInput::UseStairs(crate::StairDirection::Down));
+        }
+
+        None
     }
 
     /// Converts player input to a concrete game action.
@@ -207,8 +221,6 @@ pub enum PlayerInput {
     Cancel,
     /// Confirm current action
     Confirm,
-    /// Terminal was resized
-    Resize { width: u16, height: u16 },
     /// Use stairs in the specified direction
     UseStairs(crate::StairDirection),
     /// Start a new game (when game has ended)

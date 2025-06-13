@@ -1,80 +1,69 @@
 //! # Display Management
 //!
-//! Screen management and terminal rendering functionality using crossterm.
+//! Screen management and 2D graphics rendering functionality using macroquad.
 
 use crate::{Entity, GameState, Position, ThatchError, ThatchResult, TileType};
-use crossterm::{
-    cursor,
-    execute,
-    style::{Color, Print, ResetColor, SetBackgroundColor, SetForegroundColor},
-    terminal::{self, Clear, ClearType, EnterAlternateScreen, LeaveAlternateScreen},
-};
-use std::io::{stdout, Write};
+use macroquad::prelude::*;
+use std::collections::HashMap;
 
-/// Terminal display manager for the game.
+/// Macroquad display manager for the game.
 ///
-/// Handles all terminal rendering operations including map display,
+/// Handles all 2D graphics rendering operations including map display,
 /// UI elements, and screen management.
-pub struct Display {
-    /// Current terminal width
-    pub width: u16,
-    /// Current terminal height  
-    pub height: u16,
-    /// Map viewport offset x
+pub struct MacroquadDisplay {
+    /// Screen width in pixels
+    pub screen_width: f32,
+    /// Screen height in pixels
+    pub screen_height: f32,
+    /// Tile size in pixels
+    pub tile_size: f32,
+    /// Map viewport offset x in tiles
     pub viewport_x: i32,
-    /// Map viewport offset y
+    /// Map viewport offset y in tiles
     pub viewport_y: i32,
-    /// Map viewport width
-    pub map_width: u16,
-    /// Map viewport height
-    pub map_height: u16,
-    /// UI panel width (right side)
-    pub ui_panel_width: u16,
+    /// Map viewport width in tiles
+    pub map_width: i32,
+    /// Map viewport height in tiles
+    pub map_height: i32,
+    /// UI panel width in pixels
+    pub ui_panel_width: f32,
     /// Message history
     pub messages: Vec<String>,
     /// Maximum number of messages to keep
     pub max_messages: usize,
-    /// Previous frame buffer to avoid unnecessary redraws
-    pub last_frame: Vec<Vec<CellData>>,
-    /// Whether we need to redraw the entire screen
-    pub needs_full_redraw: bool,
     /// Last player position for tracking movement
     pub last_player_pos: Option<Position>,
-    /// Last message count for tracking new messages
-    pub last_message_count: usize,
+    /// Tile textures
+    pub tile_textures: HashMap<char, Texture2D>,
+    /// Font for text rendering
+    pub font: Option<Font>,
 }
 
-/// Data for a single terminal cell
-#[derive(Debug, Clone, PartialEq)]
-pub(crate) struct CellData {
-    character: char,
-    fg_color: Color,
-    bg_color: Option<Color>,
-}
-
-impl Display {
-    /// Creates a new display manager and initializes the terminal.
+impl MacroquadDisplay {
+    /// Creates a new display manager and initializes macroquad rendering.
     ///
     /// # Examples
     ///
     /// ```
-    /// use thatch::Display;
+    /// use thatch::MacroquadDisplay;
     ///
-    /// let display = Display::new().unwrap();
+    /// let display = MacroquadDisplay::new().await.unwrap();
     /// // Display is ready for rendering
     /// ```
-    pub fn new() -> ThatchResult<Self> {
-        // Get terminal size
-        let (width, height) = terminal::size().map_err(|e| ThatchError::Io(e))?;
-
-        // Calculate layout dimensions
-        let ui_panel_width = 30; // Right panel for stats/inventory
-        let map_width = width.saturating_sub(ui_panel_width + 1); // Leave space for border
-        let map_height = height.saturating_sub(4); // Leave space for messages at bottom
+    pub async fn new() -> ThatchResult<Self> {
+        let screen_width = screen_width();
+        let screen_height = screen_height();
+        
+        // Tile size and layout calculations
+        let tile_size = 24.0;
+        let ui_panel_width = 300.0;
+        let map_width = ((screen_width - ui_panel_width) / tile_size) as i32;
+        let map_height = ((screen_height - 100.0) / tile_size) as i32; // Leave space for messages
 
         let mut display = Self {
-            width,
-            height,
+            screen_width,
+            screen_height,
+            tile_size,
             viewport_x: 0,
             viewport_y: 0,
             map_width,
@@ -82,56 +71,48 @@ impl Display {
             ui_panel_width,
             messages: Vec::new(),
             max_messages: 100,
-            last_frame: vec![
-                vec![
-                    CellData {
-                        character: ' ',
-                        fg_color: Color::White,
-                        bg_color: None
-                    };
-                    width as usize
-                ];
-                height as usize
-            ],
-            needs_full_redraw: true,
             last_player_pos: None,
-            last_message_count: 0,
+            tile_textures: HashMap::new(),
+            font: None,
         };
 
-        display.initialize_terminal()?;
+        display.initialize_graphics().await?;
         Ok(display)
     }
 
-    /// Initializes the terminal for game display.
-    pub fn initialize_terminal(&mut self) -> ThatchResult<()> {
-        let mut stdout = stdout();
-
-        // Enter alternate screen and enable raw mode
-        execute!(stdout, EnterAlternateScreen).map_err(ThatchError::Io)?;
-        terminal::enable_raw_mode().map_err(ThatchError::Io)?;
-
-        // Clear the screen once, then rely on buffer-based rendering
-        execute!(stdout, Clear(ClearType::All), cursor::Hide).map_err(ThatchError::Io)?;
-
+    /// Initializes graphics resources.
+    async fn initialize_graphics(&mut self) -> ThatchResult<()> {
+        // Create simple tile textures using rectangles
+        self.create_tile_textures().await;
+        
         Ok(())
     }
 
-    /// Restores terminal to normal state.
-    pub fn cleanup(&mut self) -> ThatchResult<()> {
-        let mut stdout = stdout();
-
-        // Restore terminal state
-        execute!(stdout, cursor::Show, ResetColor, LeaveAlternateScreen)
-            .map_err(ThatchError::Io)?;
-        terminal::disable_raw_mode().map_err(ThatchError::Io)?;
-
-        Ok(())
+    /// Creates tile textures for different tile types.
+    async fn create_tile_textures(&mut self) {
+        // For now, we'll just use colored rectangles for tiles
+        // In a real implementation, you'd load actual texture files
+        
+        // Create a simple 1x1 white texture that we can tint
+        let white_texture = Texture2D::from_rgba8(1, 1, &[255, 255, 255, 255]);
+        
+        // Map characters to the base texture (we'll use colors to differentiate)
+        // Note: In macroquad, textures are reference-counted, so cloning is cheap
+        self.tile_textures.insert('#', white_texture.clone()); // Wall
+        self.tile_textures.insert('.', white_texture.clone()); // Floor
+        self.tile_textures.insert('@', white_texture.clone()); // Player
+        self.tile_textures.insert('+', white_texture.clone()); // Closed door
+        self.tile_textures.insert('\'', white_texture.clone()); // Open door
+        self.tile_textures.insert('<', white_texture.clone()); // Stairs up
+        self.tile_textures.insert('>', white_texture.clone()); // Stairs down
+        self.tile_textures.insert('~', white_texture.clone()); // Water
+        self.tile_textures.insert('*', white_texture); // Special
     }
 
     /// Renders the complete game screen.
     ///
     /// This includes the map, UI panels, and message area.
-    pub fn render_game(&mut self, game_state: &GameState) -> ThatchResult<()> {
+    pub async fn render_game(&mut self, game_state: &GameState) -> ThatchResult<()> {
         // Check if we need to update viewport
         let current_player_pos = game_state.get_player().map(|p| p.position());
         if current_player_pos != self.last_player_pos {
@@ -139,136 +120,27 @@ impl Display {
                 self.center_viewport_on_position(pos);
             }
             self.last_player_pos = current_player_pos;
-            self.needs_full_redraw = true;
         }
 
-        // Check if messages changed
-        if self.messages.len() != self.last_message_count {
-            self.last_message_count = self.messages.len();
-            self.needs_full_redraw = true; // For now, redraw all if messages change
-        }
+        // Clear screen
+        clear_background(BLACK);
 
-        // Create new frame buffer
-        let mut new_frame = vec![
-            vec![
-                CellData {
-                    character: ' ',
-                    fg_color: Color::White,
-                    bg_color: None
-                };
-                self.width as usize
-            ];
-            self.height as usize
-        ];
+        // Render components
+        self.render_map(game_state)?;
+        self.render_ui(game_state)?;
+        self.render_messages()?;
 
-        // Render to buffer
-        self.render_map_to_buffer(&mut new_frame, game_state)?;
-        self.render_ui_to_buffer(&mut new_frame, game_state)?;
-        self.render_messages_to_buffer(&mut new_frame)?;
-        self.render_border_to_buffer(&mut new_frame)?;
-        self.render_tooltips_to_buffer(&mut new_frame, game_state)?;
-
-        // Only update changed cells
-        self.update_changed_cells(&new_frame)?;
-
-        // Store frame for next comparison
-        self.last_frame = new_frame;
-        self.needs_full_redraw = false;
-
-        let mut stdout = stdout();
-        stdout.flush().map_err(ThatchError::Io)?;
-        Ok(())
-    }
-
-    /// Updates only the cells that have changed since last frame
-    fn update_changed_cells(&self, new_frame: &[Vec<CellData>]) -> ThatchResult<()> {
-        let mut stdout = stdout();
-        let mut commands = Vec::new();
-        
-        // Batch commands to reduce individual terminal operations
-        for (y, row) in new_frame.iter().enumerate() {
-            let mut run_start: Option<usize> = None;
-            let mut run_cells = Vec::new();
-            
-            for (x, cell) in row.iter().enumerate() {
-                let should_update = self.needs_full_redraw
-                    || y >= self.last_frame.len()
-                    || x >= self.last_frame[y].len()
-                    || &self.last_frame[y][x] != cell;
-                
-                if should_update {
-                    if run_start.is_none() {
-                        run_start = Some(x);
-                    }
-                    run_cells.push(cell);
-                } else if let Some(start) = run_start {
-                    // End of run, write batched cells
-                    self.write_cell_run(&mut stdout, start, y, &run_cells)?;
-                    run_start = None;
-                    run_cells.clear();
-                }
-            }
-            
-            // Write any remaining run at end of row
-            if let Some(start) = run_start {
-                self.write_cell_run(&mut stdout, start, y, &run_cells)?;
-            }
-        }
-
-        Ok(())
-    }
-    
-    /// Writes a run of consecutive cells efficiently
-    fn write_cell_run(&self, stdout: &mut std::io::Stdout, start_x: usize, y: usize, cells: &[&CellData]) -> ThatchResult<()> {
-        if cells.is_empty() {
-            return Ok(());
-        }
-        
-        // Move to start of run
-        execute!(stdout, cursor::MoveTo(start_x as u16, y as u16)).map_err(ThatchError::Io)?;
-        
-        let mut current_fg = Color::Reset;
-        let mut current_bg: Option<Color> = None;
-        
-        for cell in cells {
-            // Only change colors when necessary
-            if current_fg != cell.fg_color {
-                execute!(stdout, SetForegroundColor(cell.fg_color)).map_err(ThatchError::Io)?;
-                current_fg = cell.fg_color;
-            }
-            
-            if current_bg != cell.bg_color {
-                if let Some(bg_color) = cell.bg_color {
-                    execute!(stdout, SetBackgroundColor(bg_color)).map_err(ThatchError::Io)?;
-                } else if current_bg.is_some() {
-                    execute!(stdout, SetBackgroundColor(Color::Reset)).map_err(ThatchError::Io)?;
-                }
-                current_bg = cell.bg_color;
-            }
-            
-            execute!(stdout, Print(cell.character)).map_err(ThatchError::Io)?;
-        }
-        
-        // Reset background if it was set
-        if current_bg.is_some() {
-            execute!(stdout, SetBackgroundColor(Color::Reset)).map_err(ThatchError::Io)?;
-        }
-        
         Ok(())
     }
 
     /// Centers the viewport on the given position.
     pub fn center_viewport_on_position(&mut self, position: Position) {
-        self.viewport_x = position.x - (self.map_width as i32 / 2);
-        self.viewport_y = position.y - (self.map_height as i32 / 2);
+        self.viewport_x = position.x - (self.map_width / 2);
+        self.viewport_y = position.y - (self.map_height / 2);
     }
 
-    /// Renders the game map to the frame buffer.
-    fn render_map_to_buffer(
-        &self,
-        buffer: &mut [Vec<CellData>],
-        game_state: &GameState,
-    ) -> ThatchResult<()> {
+    /// Renders the game map using macroquad graphics.
+    fn render_map(&self, game_state: &GameState) -> ThatchResult<()> {
         let level = game_state
             .world
             .current_level()
@@ -276,42 +148,23 @@ impl Display {
 
         for screen_y in 0..self.map_height {
             for screen_x in 0..self.map_width {
-                let world_x = self.viewport_x + screen_x as i32;
-                let world_y = self.viewport_y + screen_y as i32;
+                let world_x = self.viewport_x + screen_x;
+                let world_y = self.viewport_y + screen_y;
                 let world_pos = Position::new(world_x, world_y);
 
-                let cell_data = if let Some(tile) = level.get_tile(world_pos) {
+                let screen_pixel_x = screen_x as f32 * self.tile_size;
+                let screen_pixel_y = screen_y as f32 * self.tile_size;
+
+                if let Some(tile) = level.get_tile(world_pos) {
                     if tile.is_visible() {
-                        self.get_tile_cell_data(game_state, world_pos, &tile.tile_type)
+                        self.render_tile_at_position(game_state, world_pos, &tile.tile_type, 
+                                                   screen_pixel_x, screen_pixel_y, false);
                     } else if tile.is_explored() {
                         // Render explored but not visible tiles in darker color
-                        CellData {
-                            character: self.get_tile_char(&tile.tile_type),
-                            fg_color: Color::DarkGrey,
-                            bg_color: None,
-                        }
-                    } else {
-                        // Unexplored area
-                        CellData {
-                            character: ' ',
-                            fg_color: Color::White,
-                            bg_color: None,
-                        }
+                        self.render_tile_at_position(game_state, world_pos, &tile.tile_type, 
+                                                   screen_pixel_x, screen_pixel_y, true);
                     }
-                } else {
-                    // Outside level bounds
-                    CellData {
-                        character: ' ',
-                        fg_color: Color::White,
-                        bg_color: None,
-                    }
-                };
-
-                // Set in buffer
-                if (screen_y as usize) < buffer.len()
-                    && (screen_x as usize) < buffer[screen_y as usize].len()
-                {
-                    buffer[screen_y as usize][screen_x as usize] = cell_data;
+                    // Don't render unexplored tiles (leave them black)
                 }
             }
         }
@@ -319,207 +172,213 @@ impl Display {
         Ok(())
     }
 
-    /// Gets cell data for a tile at the given position, checking for entities.
-    fn get_tile_cell_data(
+    /// Renders a tile at the given screen position.
+    fn render_tile_at_position(
         &self,
         game_state: &GameState,
-        position: Position,
+        world_pos: Position,
         tile_type: &TileType,
-    ) -> CellData {
+        screen_x: f32,
+        screen_y: f32,
+        is_explored_only: bool,
+    ) {
         // Check if there's an entity at this position
-        if let Some(entity_id) = game_state.get_entity_at_position(position) {
+        if let Some(entity_id) = game_state.get_entity_at_position(world_pos) {
             if let Some(entity) = game_state.entities.get(&entity_id) {
-                let (character, color) = match entity {
-                    crate::ConcreteEntity::Player(_) => ('@', Color::Yellow),
+                let (character, base_color) = match entity {
+                    crate::ConcreteEntity::Player(_) => ('@', YELLOW),
                 };
 
-                return CellData {
-                    character,
-                    fg_color: color,
-                    bg_color: None,
+                let color = if is_explored_only { 
+                    Color::new(base_color.r * 0.4, base_color.g * 0.4, base_color.b * 0.4, base_color.a)
+                } else { 
+                    base_color 
                 };
+
+                if let Some(texture) = self.tile_textures.get(&character) {
+                    draw_texture_ex(
+                        texture,
+                        screen_x,
+                        screen_y,
+                        color,
+                        DrawTextureParams {
+                            dest_size: Some(vec2(self.tile_size, self.tile_size)),
+                            ..Default::default()
+                        },
+                    );
+                }
+                return;
             }
         }
 
         // No entity, render the tile
-        CellData {
-            character: self.get_tile_char(tile_type),
-            fg_color: self.get_tile_color(tile_type),
-            bg_color: None,
-        }
-    }
-
-    /// Gets the display character for a tile type.
-    fn get_tile_char(&self, tile_type: &TileType) -> char {
-        match tile_type {
-            TileType::Wall => '#',
-            TileType::Floor => '.',
-            TileType::Door { is_open } => {
-                if *is_open {
-                    '\''
-                } else {
-                    '+'
-                }
-            }
-            TileType::StairsUp => '<',
-            TileType::StairsDown => '>',
-            TileType::Water => '~',
-            TileType::Special { .. } => '*',
-        }
-    }
-
-    /// Gets the display color for a tile type.
-    fn get_tile_color(&self, tile_type: &TileType) -> Color {
-        match tile_type {
-            TileType::Wall => Color::White,
-            TileType::Floor => Color::Grey,
-            TileType::Door { .. } => Color::Yellow,
-            TileType::StairsUp => Color::Cyan,
-            TileType::StairsDown => Color::Cyan,
-            TileType::Water => Color::Blue,
-            TileType::Special { .. } => Color::Magenta,
-        }
-    }
-
-    /// Renders the UI panel to the buffer.
-    fn render_ui_to_buffer(
-        &self,
-        buffer: &mut [Vec<CellData>],
-        game_state: &GameState,
-    ) -> ThatchResult<()> {
-        let panel_x = self.map_width + 1;
-
-        // Helper function to write text to buffer
-        let mut write_text = |x: u16, y: u16, text: &str, color: Color| {
-            for (i, ch) in text.chars().enumerate() {
-                let pos_x = x as usize + i;
-                let pos_y = y as usize;
-                if pos_y < buffer.len() && pos_x < buffer[pos_y].len() {
-                    buffer[pos_y][pos_x] = CellData {
-                        character: ch,
-                        fg_color: color,
-                        bg_color: None,
-                    };
-                }
-            }
+        let (character, base_color) = self.get_tile_display_data(tile_type);
+        let color = if is_explored_only { 
+            Color::new(base_color.r * 0.4, base_color.g * 0.4, base_color.b * 0.4, base_color.a)
+        } else { 
+            base_color 
         };
 
-        // Render title
-        write_text(panel_x, 0, "THATCH ROGUELIKE", Color::White);
+        if let Some(texture) = self.tile_textures.get(&character) {
+            draw_texture_ex(
+                texture,
+                screen_x,
+                screen_y,
+                color,
+                DrawTextureParams {
+                    dest_size: Some(vec2(self.tile_size, self.tile_size)),
+                    ..Default::default()
+                },
+            );
+        }
+    }
 
-        let mut line = 2;
+    /// Gets the display character and color for a tile type.
+    fn get_tile_display_data(&self, tile_type: &TileType) -> (char, Color) {
+        match tile_type {
+            TileType::Wall => ('#', WHITE),
+            TileType::Floor => ('.', GRAY),
+            TileType::Door { is_open } => {
+                if *is_open {
+                    ('\'', YELLOW)
+                } else {
+                    ('+', YELLOW)
+                }
+            }
+            TileType::StairsUp => ('<', LIGHTGRAY),
+            TileType::StairsDown => ('>', ORANGE),
+            TileType::Water => ('~', BLUE),
+            TileType::Special { .. } => ('*', MAGENTA),
+        }
+    }
+
+    /// Renders the UI panel.
+    fn render_ui(&self, game_state: &GameState) -> ThatchResult<()> {
+        let panel_x = self.map_width as f32 * self.tile_size + 10.0;
+        let mut line_y = 20.0;
+        let line_height = 20.0;
+
+        // Render title
+        draw_text("THATCH ROGUELIKE", panel_x, line_y, 24.0, WHITE);
+        line_y += line_height * 2.0;
 
         // Render player stats if available
         if let Some(player) = game_state.get_player() {
-            write_text(
-                panel_x,
-                line,
-                &format!("Player: {}", player.name),
-                Color::Yellow,
-            );
-            line += 1;
+            draw_text(&format!("Player: {}", player.name), panel_x, line_y, 18.0, YELLOW);
+            line_y += line_height;
 
-            write_text(
+            draw_text(
+                &format!("Health: {}/{}", player.stats.health, player.stats.max_health),
                 panel_x,
-                line,
-                &format!(
-                    "Health: {}/{}",
-                    player.stats.health, player.stats.max_health
-                ),
-                Color::White,
+                line_y,
+                18.0,
+                WHITE,
             );
-            line += 1;
+            line_y += line_height;
 
-            write_text(
-                panel_x,
-                line,
+            draw_text(
                 &format!("Mana: {}/{}", player.stats.mana, player.stats.max_mana),
-                Color::White,
-            );
-            line += 1;
-
-            write_text(
                 panel_x,
-                line,
-                &format!("Level: {}", player.stats.level),
-                Color::White,
+                line_y,
+                18.0,
+                WHITE,
             );
-            line += 1;
+            line_y += line_height;
 
-            write_text(
-                panel_x,
-                line,
-                &format!("XP: {}", player.stats.experience),
-                Color::White,
-            );
-            line += 2;
+            draw_text(&format!("Level: {}", player.stats.level), panel_x, line_y, 18.0, WHITE);
+            line_y += line_height;
 
-            write_text(
-                panel_x,
-                line,
+            draw_text(&format!("XP: {}", player.stats.experience), panel_x, line_y, 18.0, WHITE);
+            line_y += line_height * 2.0;
+
+            draw_text(
                 &format!("Position: ({}, {})", player.position.x, player.position.y),
-                Color::White,
+                panel_x,
+                line_y,
+                18.0,
+                WHITE,
             );
-            line += 2;
+            line_y += line_height;
+
+            // Show tile information
+            if let Some(level) = game_state.world.current_level() {
+                if let Some(tile) = level.get_tile(player.position()) {
+                    let tile_name = match &tile.tile_type {
+                        crate::TileType::Floor => "Floor",
+                        crate::TileType::Wall => "Wall",
+                        crate::TileType::Door { is_open } => {
+                            if *is_open { "Open Door" } else { "Closed Door" }
+                        }
+                        crate::TileType::StairsUp => "Stairs Up",
+                        crate::TileType::StairsDown => "Stairs Down",
+                        crate::TileType::Water => "Water",
+                        crate::TileType::Special { .. } => "Special",
+                    };
+                    
+                    let tile_color = match &tile.tile_type {
+                        crate::TileType::StairsUp => LIGHTGRAY,
+                        crate::TileType::StairsDown => ORANGE,
+                        _ => WHITE,
+                    };
+                    
+                    draw_text(
+                        &format!("Standing on: {}", tile_name),
+                        panel_x,
+                        line_y,
+                        18.0,
+                        tile_color,
+                    );
+                }
+            }
+            line_y += line_height * 2.0;
         }
 
         // Render game info
         let time_info = game_state.get_game_time_info();
-        write_text(panel_x, line, "Game Info:", Color::Cyan);
-        line += 1;
+        draw_text("Game Info:", panel_x, line_y, 18.0, SKYBLUE);
+        line_y += line_height;
 
-        write_text(
-            panel_x,
-            line,
-            &format!("Turn: {}", time_info.turn_number),
-            Color::White,
-        );
-        line += 1;
+        draw_text(&format!("Turn: {}", time_info.turn_number), panel_x, line_y, 18.0, WHITE);
+        line_y += line_height;
 
-        write_text(
-            panel_x,
-            line,
+        draw_text(
             &format!("Time: {}s", time_info.elapsed_time.as_secs()),
-            Color::White,
+            panel_x,
+            line_y,
+            18.0,
+            WHITE,
         );
-        line += 2;
+        line_y += line_height * 2.0;
 
         // Render controls
-        write_text(panel_x, line, "Controls:", Color::Green);
-        line += 1;
+        draw_text("Controls:", panel_x, line_y, 18.0, GREEN);
+        line_y += line_height;
 
         let controls = [
-            "hjkl/arrow keys: Move", 
-            "<: Go up stairs",
-            ">: Go down stairs", 
-            "q: Quit", 
-            "?: Help"
+            "WASD/Arrow keys: Move",
+            "1: Go up stairs (<)",
+            "2: Go down stairs (>)",
+            "SPACE: Wait",
+            "ESC: Quit",
+            "F1: Help",
         ];
 
         for control in &controls {
-            write_text(panel_x, line, control, Color::White);
-            line += 1;
+            draw_text(control, panel_x, line_y, 16.0, WHITE);
+            line_y += line_height;
         }
 
         Ok(())
     }
 
-    /// Renders the message area to the buffer.
-    fn render_messages_to_buffer(&self, buffer: &mut [Vec<CellData>]) -> ThatchResult<()> {
-        let message_area_y = self.height - 3;
+    /// Renders the message area.
+    fn render_messages(&self) -> ThatchResult<()> {
+        let message_area_y = self.screen_height - 80.0;
         let message_count = 3; // Show last 3 messages
+        let line_height = 18.0;
 
-        // Render border
-        for x in 0..self.width {
-            let y = message_area_y - 1;
-            if (y as usize) < buffer.len() && (x as usize) < buffer[y as usize].len() {
-                buffer[y as usize][x as usize] = CellData {
-                    character: '─',
-                    fg_color: Color::White,
-                    bg_color: None,
-                };
-            }
-        }
+        // Draw background for message area
+        draw_rectangle(0.0, message_area_y - 10.0, self.screen_width, 90.0, Color::new(0.0, 0.0, 0.0, 0.8));
 
         // Render messages
         let start_index = if self.messages.len() > message_count {
@@ -529,33 +388,8 @@ impl Display {
         };
 
         for (i, message) in self.messages.iter().skip(start_index).enumerate() {
-            let y = message_area_y + i as u16;
-            for (x, ch) in message.chars().enumerate() {
-                if (y as usize) < buffer.len() && x < buffer[y as usize].len() {
-                    buffer[y as usize][x] = CellData {
-                        character: ch,
-                        fg_color: Color::White,
-                        bg_color: None,
-                    };
-                }
-            }
-        }
-
-        Ok(())
-    }
-
-    /// Renders the border between map and UI panel to the buffer.
-    fn render_border_to_buffer(&self, buffer: &mut [Vec<CellData>]) -> ThatchResult<()> {
-        let border_x = self.map_width;
-
-        for y in 0..self.height {
-            if (y as usize) < buffer.len() && (border_x as usize) < buffer[y as usize].len() {
-                buffer[y as usize][border_x as usize] = CellData {
-                    character: '│',
-                    fg_color: Color::White,
-                    bg_color: None,
-                };
-            }
+            let y = message_area_y + i as f32 * line_height;
+            draw_text(message, 10.0, y, 16.0, WHITE);
         }
 
         Ok(())
@@ -569,120 +403,5 @@ impl Display {
         if self.messages.len() > self.max_messages {
             self.messages.remove(0);
         }
-    }
-
-    /// Updates the display size if terminal was resized.
-    pub fn update_size(&mut self) -> ThatchResult<()> {
-        let (width, height) = terminal::size().map_err(ThatchError::Io)?;
-
-        self.width = width;
-        self.height = height;
-
-        // Recalculate layout
-        self.map_width = width.saturating_sub(self.ui_panel_width + 1);
-        self.map_height = height.saturating_sub(4);
-
-        // Resize frame buffer
-        self.last_frame = vec![
-            vec![
-                CellData {
-                    character: ' ',
-                    fg_color: Color::White,
-                    bg_color: None
-                };
-                width as usize
-            ];
-            height as usize
-        ];
-        self.needs_full_redraw = true;
-
-        Ok(())
-    }
-
-    /// Renders tooltips for special tiles the player is standing on or adjacent to
-    fn render_tooltips_to_buffer(
-        &self,
-        buffer: &mut [Vec<CellData>],
-        game_state: &GameState,
-    ) -> ThatchResult<()> {
-        let Some(player) = game_state.get_player() else {
-            return Ok(());
-        };
-
-        let Some(level) = game_state.world.current_level() else {
-            return Ok(());
-        };
-
-        let player_pos = player.position();
-        
-        // Check the tile the player is standing on
-        if let Some(tile) = level.get_tile(player_pos) {
-            if matches!(tile.tile_type, TileType::StairsUp | TileType::StairsDown | TileType::Door { .. } | TileType::Special { .. }) {
-                self.render_tooltip_to_buffer(buffer, &tile.tile_type, 2, self.height - 5)?;
-            }
-        }
-
-        Ok(())
-    }
-
-    /// Renders a single tooltip to the buffer
-    fn render_tooltip_to_buffer(
-        &self,
-        buffer: &mut [Vec<CellData>],
-        tile_type: &TileType,
-        x: u16,
-        y: u16,
-    ) -> ThatchResult<()> {
-        let tooltip_text = match tile_type {
-            TileType::StairsUp => {
-                "Stairs Up - Press '<' to ascend (Warning: Exiting at level 1 ends the game!)"
-            }
-            TileType::StairsDown => {
-                "Stairs Down - Press '>' to descend to the next level"
-            }
-            TileType::Door { is_open } => {
-                if *is_open {
-                    "Open Door - Press 'c' to close"
-                } else {
-                    "Closed Door - Press 'o' to open"
-                }
-            }
-            TileType::Special { description } => description,
-            _ => return Ok(()), // No tooltip for regular tiles
-        };
-
-        // Add a background box around the tooltip
-        let tooltip_len = tooltip_text.len();
-        let box_width = tooltip_len + 2; // padding
-        
-        // Draw background box
-        for i in 0..box_width {
-            let pos_x = (x + i as u16) as usize;
-            let pos_y = y as usize;
-            
-            if pos_y < buffer.len() && pos_x < buffer[pos_y].len() {
-                buffer[pos_y][pos_x] = CellData {
-                    character: ' ',
-                    fg_color: Color::White,
-                    bg_color: Some(Color::DarkBlue),
-                };
-            }
-        }
-        
-        // Draw tooltip text
-        for (i, ch) in tooltip_text.chars().enumerate() {
-            let pos_x = (x + 1 + i as u16) as usize; // offset by 1 for padding
-            let pos_y = y as usize;
-            
-            if pos_y < buffer.len() && pos_x < buffer[pos_y].len() {
-                buffer[pos_y][pos_x] = CellData {
-                    character: ch,
-                    fg_color: Color::White,
-                    bg_color: Some(Color::DarkBlue),
-                };
-            }
-        }
-
-        Ok(())
     }
 }
