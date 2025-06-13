@@ -6,9 +6,10 @@ pub mod commands;
 
 pub use commands::*;
 
-use crate::{
-    ConcreteAction, Direction, Entity, GameState, MoveAction, Position, ThatchError, ThatchResult,
-    WaitAction,
+use crate::{ThatchError, ThatchResult};
+use crate::game::{
+    ConcreteAction, Direction, Entity, GameState, MoveAction, Position, 
+    StairDirection, UseStairsAction, WaitAction,
 };
 use macroquad::prelude::*;
 
@@ -19,6 +20,12 @@ use macroquad::prelude::*;
 pub struct InputHandler {
     /// Whether to enable Vi-style movement keys (hjkl)
     pub vi_keys_enabled: bool,
+}
+
+impl Default for InputHandler {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl InputHandler {
@@ -137,10 +144,10 @@ impl InputHandler {
 
         // Stairs - using number keys since < > are hard to press
         if is_key_pressed(KeyCode::Key1) {
-            return Some(PlayerInput::UseStairs(crate::StairDirection::Up));
+            return Some(PlayerInput::UseStairs(StairDirection::Up));
         }
         if is_key_pressed(KeyCode::Key2) {
-            return Some(PlayerInput::UseStairs(crate::StairDirection::Down));
+            return Some(PlayerInput::UseStairs(StairDirection::Down));
         }
 
         None
@@ -187,7 +194,7 @@ impl InputHandler {
 
             PlayerInput::UseStairs(direction) => {
                 if let Some(player) = game_state.get_player() {
-                    Ok(Some(ConcreteAction::UseStairs(crate::UseStairsAction::new(
+                    Ok(Some(ConcreteAction::UseStairs(UseStairsAction::new(
                         player.id(),
                         direction,
                     ))))
@@ -222,7 +229,7 @@ pub enum PlayerInput {
     /// Confirm current action
     Confirm,
     /// Use stairs in the specified direction
-    UseStairs(crate::StairDirection),
+    UseStairs(StairDirection),
     /// Start a new game (when game has ended)
     NewGame,
 }

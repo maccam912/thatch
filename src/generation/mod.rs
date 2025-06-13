@@ -14,7 +14,8 @@ pub use dungeon::*;
 pub use encounters::*;
 pub use items::*;
 
-use crate::{Level, Position, ThatchError, ThatchResult, TileType};
+use crate::{ThatchError, ThatchResult};
+use crate::game::{Level, Position, TileType};
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 use serde::{Deserialize, Serialize};
@@ -398,7 +399,7 @@ pub mod utils {
     }
 
     /// Applies smoothing to generated rooms to make them more natural.
-    pub fn smooth_room_layout(rooms: &mut Vec<Room>, rng: &mut StdRng) {
+    pub fn smooth_room_layout(rooms: &mut [Room], rng: &mut StdRng) {
         // Apply random variations to room shapes
         for room in rooms.iter_mut() {
             if rng.gen_bool(0.3) {
@@ -436,6 +437,7 @@ pub mod utils {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::HashSet;
 
     #[test]
     fn test_generation_config_creation() {

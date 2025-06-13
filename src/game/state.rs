@@ -466,7 +466,7 @@ impl GameState {
         match event {
             GameEvent::EntityMoved {
                 entity_id,
-                from,
+                from: _,
                 to,
             } => {
                 // Position index is already updated by set_entity_position
@@ -478,7 +478,7 @@ impl GameState {
 
             GameEvent::EntityDamaged {
                 entity_id,
-                damage,
+                damage: _,
                 source: _,
             } => {
                 // Forward to the entity for handling
@@ -601,7 +601,7 @@ impl GameState {
     fn add_entity_to_position_index(&mut self, entity_id: EntityId, position: Position) {
         self.position_index
             .entry(position)
-            .or_insert_with(Vec::new)
+            .or_default()
             .push(entity_id);
     }
 

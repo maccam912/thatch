@@ -26,12 +26,35 @@ pub mod lldm;
 pub mod rendering;
 pub mod utils;
 
+// Core module re-exports
 pub use game::*;
 pub use generation::*;
 pub use input::*;
 pub use lldm::*;
 pub use rendering::*;
 pub use utils::*;
+
+// Explicit re-exports for commonly used types to ensure cross-platform compatibility
+pub use game::{
+    Direction, EntityId, Position, 
+    // From actions
+    Action, ActionResult, ActionType, AttackAction, ConcreteAction, MoveAction, 
+    StairDirection, UseStairsAction, WaitAction,
+    // From entities  
+    ConcreteEntity, Entity, EntityStats, PlayerCharacter,
+    // From state
+    GameCompletionState, GameEvent, GameState, GameTimeInfo, MessageImportance,
+    // From world
+    Level, Tile, TileType, World,
+};
+
+pub use generation::{
+    GenerationConfig, Generator, Room, RoomType, RoomCorridorGenerator,
+};
+
+pub use rendering::{
+    MacroquadDisplay, UI,
+};
 
 /// Core error type for the Thatch game engine.
 #[derive(thiserror::Error, Debug)]
