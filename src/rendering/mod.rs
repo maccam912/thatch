@@ -1,6 +1,6 @@
 //! # Rendering Module
 //!
-//! Terminal-based rendering system using crossterm for display management.
+//! 2D graphics rendering system using macroquad for display management.
 
 pub mod display;
 pub mod ui;
@@ -8,7 +8,7 @@ pub mod ui;
 pub use display::*;
 pub use ui::*;
 
-/// Placeholder rendering system for terminal output.
+/// Placeholder rendering system for macroquad graphics output.
 pub struct Renderer;
 
 impl Renderer {
