@@ -166,6 +166,7 @@ impl Display {
         self.render_ui_to_buffer(&mut new_frame, game_state)?;
         self.render_messages_to_buffer(&mut new_frame)?;
         self.render_border_to_buffer(&mut new_frame)?;
+        self.render_tooltips_to_buffer(&mut new_frame, game_state)?;
 
         // Only update changed cells
         self.update_changed_cells(&new_frame)?;
@@ -182,38 +183,77 @@ impl Display {
     /// Updates only the cells that have changed since last frame
     fn update_changed_cells(&self, new_frame: &[Vec<CellData>]) -> ThatchResult<()> {
         let mut stdout = stdout();
-
+        let mut commands = Vec::new();
+        
+        // Batch commands to reduce individual terminal operations
         for (y, row) in new_frame.iter().enumerate() {
+            let mut run_start: Option<usize> = None;
+            let mut run_cells = Vec::new();
+            
             for (x, cell) in row.iter().enumerate() {
-                // Skip if cell hasn't changed and we don't need full redraw
-                if !self.needs_full_redraw
-                    && y < self.last_frame.len()
-                    && x < self.last_frame[y].len()
-                    && &self.last_frame[y][x] == cell
-                {
-                    continue;
+                let should_update = self.needs_full_redraw
+                    || y >= self.last_frame.len()
+                    || x >= self.last_frame[y].len()
+                    || &self.last_frame[y][x] != cell;
+                
+                if should_update {
+                    if run_start.is_none() {
+                        run_start = Some(x);
+                    }
+                    run_cells.push(cell);
+                } else if let Some(start) = run_start {
+                    // End of run, write batched cells
+                    self.write_cell_run(&mut stdout, start, y, &run_cells)?;
+                    run_start = None;
+                    run_cells.clear();
                 }
-
-                // Move cursor and write character
-                execute!(
-                    stdout,
-                    cursor::MoveTo(x as u16, y as u16),
-                    SetForegroundColor(cell.fg_color)
-                )
-                .map_err(ThatchError::Io)?;
-
-                if let Some(bg_color) = cell.bg_color {
-                    execute!(stdout, SetBackgroundColor(bg_color)).map_err(ThatchError::Io)?;
-                }
-
-                execute!(stdout, Print(cell.character)).map_err(ThatchError::Io)?;
-
-                if cell.bg_color.is_some() {
-                    execute!(stdout, SetBackgroundColor(Color::Reset)).map_err(ThatchError::Io)?;
-                }
+            }
+            
+            // Write any remaining run at end of row
+            if let Some(start) = run_start {
+                self.write_cell_run(&mut stdout, start, y, &run_cells)?;
             }
         }
 
+        Ok(())
+    }
+    
+    /// Writes a run of consecutive cells efficiently
+    fn write_cell_run(&self, stdout: &mut std::io::Stdout, start_x: usize, y: usize, cells: &[&CellData]) -> ThatchResult<()> {
+        if cells.is_empty() {
+            return Ok(());
+        }
+        
+        // Move to start of run
+        execute!(stdout, cursor::MoveTo(start_x as u16, y as u16)).map_err(ThatchError::Io)?;
+        
+        let mut current_fg = Color::Reset;
+        let mut current_bg: Option<Color> = None;
+        
+        for cell in cells {
+            // Only change colors when necessary
+            if current_fg != cell.fg_color {
+                execute!(stdout, SetForegroundColor(cell.fg_color)).map_err(ThatchError::Io)?;
+                current_fg = cell.fg_color;
+            }
+            
+            if current_bg != cell.bg_color {
+                if let Some(bg_color) = cell.bg_color {
+                    execute!(stdout, SetBackgroundColor(bg_color)).map_err(ThatchError::Io)?;
+                } else if current_bg.is_some() {
+                    execute!(stdout, SetBackgroundColor(Color::Reset)).map_err(ThatchError::Io)?;
+                }
+                current_bg = cell.bg_color;
+            }
+            
+            execute!(stdout, Print(cell.character)).map_err(ThatchError::Io)?;
+        }
+        
+        // Reset background if it was set
+        if current_bg.is_some() {
+            execute!(stdout, SetBackgroundColor(Color::Reset)).map_err(ThatchError::Io)?;
+        }
+        
         Ok(())
     }
 
@@ -448,7 +488,13 @@ impl Display {
         write_text(panel_x, line, "Controls:", Color::Green);
         line += 1;
 
-        let controls = ["hjkl/arrow keys: Move", "q: Quit", "?: Help"];
+        let controls = [
+            "hjkl/arrow keys: Move", 
+            "<: Go up stairs",
+            ">: Go down stairs", 
+            "q: Quit", 
+            "?: Help"
+        ];
 
         for control in &controls {
             write_text(panel_x, line, control, Color::White);
@@ -549,6 +595,93 @@ impl Display {
             height as usize
         ];
         self.needs_full_redraw = true;
+
+        Ok(())
+    }
+
+    /// Renders tooltips for special tiles the player is standing on or adjacent to
+    fn render_tooltips_to_buffer(
+        &self,
+        buffer: &mut [Vec<CellData>],
+        game_state: &GameState,
+    ) -> ThatchResult<()> {
+        let Some(player) = game_state.get_player() else {
+            return Ok(());
+        };
+
+        let Some(level) = game_state.world.current_level() else {
+            return Ok(());
+        };
+
+        let player_pos = player.position();
+        
+        // Check the tile the player is standing on
+        if let Some(tile) = level.get_tile(player_pos) {
+            if matches!(tile.tile_type, TileType::StairsUp | TileType::StairsDown | TileType::Door { .. } | TileType::Special { .. }) {
+                self.render_tooltip_to_buffer(buffer, &tile.tile_type, 2, self.height - 5)?;
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Renders a single tooltip to the buffer
+    fn render_tooltip_to_buffer(
+        &self,
+        buffer: &mut [Vec<CellData>],
+        tile_type: &TileType,
+        x: u16,
+        y: u16,
+    ) -> ThatchResult<()> {
+        let tooltip_text = match tile_type {
+            TileType::StairsUp => {
+                "Stairs Up - Press '<' to ascend (Warning: Exiting at level 1 ends the game!)"
+            }
+            TileType::StairsDown => {
+                "Stairs Down - Press '>' to descend to the next level"
+            }
+            TileType::Door { is_open } => {
+                if *is_open {
+                    "Open Door - Press 'c' to close"
+                } else {
+                    "Closed Door - Press 'o' to open"
+                }
+            }
+            TileType::Special { description } => description,
+            _ => return Ok(()), // No tooltip for regular tiles
+        };
+
+        // Add a background box around the tooltip
+        let tooltip_len = tooltip_text.len();
+        let box_width = tooltip_len + 2; // padding
+        
+        // Draw background box
+        for i in 0..box_width {
+            let pos_x = (x + i as u16) as usize;
+            let pos_y = y as usize;
+            
+            if pos_y < buffer.len() && pos_x < buffer[pos_y].len() {
+                buffer[pos_y][pos_x] = CellData {
+                    character: ' ',
+                    fg_color: Color::White,
+                    bg_color: Some(Color::DarkBlue),
+                };
+            }
+        }
+        
+        // Draw tooltip text
+        for (i, ch) in tooltip_text.chars().enumerate() {
+            let pos_x = (x + 1 + i as u16) as usize; // offset by 1 for padding
+            let pos_y = y as usize;
+            
+            if pos_y < buffer.len() && pos_x < buffer[pos_y].len() {
+                buffer[pos_y][pos_x] = CellData {
+                    character: ch,
+                    fg_color: Color::White,
+                    bg_color: Some(Color::DarkBlue),
+                };
+            }
+        }
 
         Ok(())
     }
