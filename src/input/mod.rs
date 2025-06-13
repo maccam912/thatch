@@ -149,7 +149,6 @@ impl InputHandler {
         if is_key_pressed(KeyCode::Key2) {
             return Some(PlayerInput::UseStairs(StairDirection::Down));
         }
-
         None
     }
 
