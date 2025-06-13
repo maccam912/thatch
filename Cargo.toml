@@ -22,13 +22,13 @@ noise = "0.9"
 pathfinding = "4.0"
 
 # MCP and networking
-jsonrpc-core = "18.0"
-jsonrpc-http-server = "18.0"
-jsonrpc-derive = "18.0"
+jsonrpc-core = { version = "18.0", optional = true }
+jsonrpc-http-server = { version = "18.0", optional = true }
+jsonrpc-derive = { version = "18.0", optional = true }
 
 # Development and debugging tools
-tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracing = { version = "0.1", optional = true }
+tracing-subscriber = { version = "0.3", features = ["env-filter"], optional = true }
 
 [dev-dependencies]
 proptest = "1.0"
@@ -60,6 +60,7 @@ codegen-units = 1
 inherits = "dev"
 opt-level = 2
 
-[[bench]]
-name = "benchmarks"
-harness = false
+# Benchmarks will be added later
+# [[bench]]
+# name = "benchmarks"
+# harness = false

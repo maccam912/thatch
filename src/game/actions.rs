@@ -1,71 +1,96 @@
 //! # Actions Module
-//! 
+//!
 //! Command pattern implementation for all game actions.
-//! 
+//!
 //! This module defines the action system that powers both player commands
 //! and AI decisions. All actions are serializable for MCP integration,
 //! save/load functionality, and replay systems.
 
-use crate::{ThatchResult, ThatchError, Position, EntityId, Direction, GameEvent};
+use crate::{Direction, EntityId, GameEvent, Position, ThatchError, ThatchResult};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 /// Trait for all executable actions in the game.
-/// 
+///
 /// Actions represent discrete commands that can be performed by entities.
 /// They are designed to be serializable for MCP integration and can be
 /// validated before execution to prevent invalid game states.
 pub trait Action: Send + Sync {
     /// Executes the action and returns resulting events.
     fn execute(&self, game_state: &mut crate::GameState) -> ThatchResult<Vec<GameEvent>>;
-    
+
     /// Validates whether this action can be executed in the current state.
     fn validate(&self, game_state: &crate::GameState) -> ThatchResult<()>;
-    
+
     /// Gets the entity that is performing this action.
     fn actor(&self) -> EntityId;
-    
+
     /// Gets the action type for serialization.
     fn action_type(&self) -> ActionType;
-    
+
     /// Serializes the action to JSON for MCP.
     fn to_json(&self) -> ThatchResult<String>;
-    
+
     /// Gets the estimated time cost of this action (for turn-based mechanics).
     fn time_cost(&self) -> u32;
-    
+
     /// Gets metadata associated with this action.
     fn metadata(&self) -> &HashMap<String, String>;
 }
 
 /// Enumeration of all possible action types.
-/// 
+///
 /// Used for serialization, action identification, and MCP integration.
 /// The LLDM can create custom actions using the `Custom` variant.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ActionType {
     /// Movement actions
     Move(Direction),
     /// Combat actions
-    Attack { target: EntityId },
+    Attack {
+        target: EntityId,
+    },
     /// Item interaction actions
-    PickUpItem { item_id: EntityId },
-    DropItem { item_id: EntityId },
-    UseItem { item_id: EntityId, target: Option<EntityId> },
-    EquipItem { item_id: EntityId, slot: String },
-    UnequipItem { slot: String },
+    PickUpItem {
+        item_id: EntityId,
+    },
+    DropItem {
+        item_id: EntityId,
+    },
+    UseItem {
+        item_id: EntityId,
+        target: Option<EntityId>,
+    },
+    EquipItem {
+        item_id: EntityId,
+        slot: String,
+    },
+    UnequipItem {
+        slot: String,
+    },
     /// World interaction actions
-    OpenDoor { position: Position },
-    CloseDoor { position: Position },
-    UseStairs { direction: StairDirection },
+    OpenDoor {
+        position: Position,
+    },
+    CloseDoor {
+        position: Position,
+    },
+    UseStairs {
+        direction: StairDirection,
+    },
     /// Communication actions
-    Say { message: String },
+    Say {
+        message: String,
+    },
     /// Wait/rest action
     Wait,
     /// Development and debugging actions
     Debug(DebugAction),
     /// LLDM-generated custom actions
-    Custom { action_name: String, parameters: HashMap<String, String> },
+    Custom {
+        action_name: String,
+        parameters: HashMap<String, String>,
+    },
 }
 
 /// Direction for stair usage.
@@ -85,7 +110,10 @@ pub enum DebugAction {
     /// Set player health
     SetHealth { amount: u32 },
     /// Spawn entity at position
-    SpawnEntity { entity_type: crate::EntityType, position: Position },
+    SpawnEntity {
+        entity_type: crate::EntityType,
+        position: Position,
+    },
     /// Toggle god mode
     ToggleGodMode,
     /// Print game state information
@@ -122,7 +150,7 @@ impl ActionResult {
             result_data: HashMap::new(),
         }
     }
-    
+
     /// Creates a failed action result.
     pub fn failure(error: String, time_cost: u32) -> Self {
         Self {
@@ -133,7 +161,7 @@ impl ActionResult {
             result_data: HashMap::new(),
         }
     }
-    
+
     /// Adds result data.
     pub fn with_data(mut self, key: String, value: String) -> Self {
         self.result_data.insert(key, value);
@@ -163,69 +191,80 @@ impl MoveAction {
 impl Action for MoveAction {
     fn execute(&self, game_state: &mut crate::GameState) -> ThatchResult<Vec<GameEvent>> {
         // Get current position of the actor
-        let current_pos = game_state.get_entity_position(self.actor)
+        let current_pos = game_state
+            .get_entity_position(self.actor)
             .ok_or_else(|| ThatchError::InvalidState("Actor entity not found".to_string()))?;
-        
+
         // Calculate new position
         let new_pos = current_pos + self.direction.to_delta();
-        
+
         // Check if new position is valid and passable
-        let current_level = game_state.world.current_level()
+        let current_level = game_state
+            .world
+            .current_level()
             .ok_or_else(|| ThatchError::InvalidState("No current level".to_string()))?;
-        
+
         if !current_level.is_valid_position(new_pos) {
-            return Err(ThatchError::InvalidAction("Position out of bounds".to_string()));
+            return Err(ThatchError::InvalidAction(
+                "Position out of bounds".to_string(),
+            ));
         }
-        
+
         if !current_level.is_passable(new_pos) {
-            return Err(ThatchError::InvalidAction("Position is blocked".to_string()));
+            return Err(ThatchError::InvalidAction(
+                "Position is blocked".to_string(),
+            ));
         }
-        
+
         // Check for other entities at the target position
         if let Some(_blocking_entity) = game_state.get_entity_at_position(new_pos) {
-            return Err(ThatchError::InvalidAction("Position occupied by another entity".to_string()));
+            return Err(ThatchError::InvalidAction(
+                "Position occupied by another entity".to_string(),
+            ));
         }
-        
+
         // Execute the movement
         game_state.set_entity_position(self.actor, new_pos)?;
-        
+
         Ok(vec![GameEvent::EntityMoved {
             entity_id: self.actor,
             from: current_pos,
             to: new_pos,
         }])
     }
-    
+
     fn validate(&self, game_state: &crate::GameState) -> ThatchResult<()> {
         // Check if actor exists
         if !game_state.entity_exists(self.actor) {
-            return Err(ThatchError::InvalidAction("Actor entity does not exist".to_string()));
+            return Err(ThatchError::InvalidAction(
+                "Actor entity does not exist".to_string(),
+            ));
         }
-        
+
         // Check if actor is alive
         if !game_state.is_entity_alive(self.actor) {
             return Err(ThatchError::InvalidAction("Actor is not alive".to_string()));
         }
-        
+
         Ok(())
     }
-    
+
     fn actor(&self) -> EntityId {
         self.actor
     }
-    
+
     fn action_type(&self) -> ActionType {
         ActionType::Move(self.direction)
     }
-    
+
     fn to_json(&self) -> ThatchResult<String> {
         serde_json::to_string(self).map_err(ThatchError::from)
     }
-    
+
     fn time_cost(&self) -> u32 {
         100 // Standard movement time
     }
-    
+
     fn metadata(&self) -> &HashMap<String, String> {
         &self.metadata
     }
@@ -254,68 +293,81 @@ impl Action for AttackAction {
     fn execute(&self, game_state: &mut crate::GameState) -> ThatchResult<Vec<GameEvent>> {
         // Validate entities exist and are alive
         if !game_state.is_entity_alive(self.attacker) {
-            return Err(ThatchError::InvalidAction("Attacker is not alive".to_string()));
+            return Err(ThatchError::InvalidAction(
+                "Attacker is not alive".to_string(),
+            ));
         }
-        
+
         if !game_state.is_entity_alive(self.target) {
-            return Err(ThatchError::InvalidAction("Target is not alive".to_string()));
+            return Err(ThatchError::InvalidAction(
+                "Target is not alive".to_string(),
+            ));
         }
-        
+
         // Check if target is in range (adjacent for melee)
-        let attacker_pos = game_state.get_entity_position(self.attacker)
+        let attacker_pos = game_state
+            .get_entity_position(self.attacker)
             .ok_or_else(|| ThatchError::InvalidState("Attacker position not found".to_string()))?;
-        let target_pos = game_state.get_entity_position(self.target)
+        let target_pos = game_state
+            .get_entity_position(self.target)
             .ok_or_else(|| ThatchError::InvalidState("Target position not found".to_string()))?;
-        
+
         if attacker_pos.manhattan_distance(target_pos) > 1 {
-            return Err(ThatchError::InvalidAction("Target is not in range".to_string()));
+            return Err(ThatchError::InvalidAction(
+                "Target is not in range".to_string(),
+            ));
         }
-        
+
         // Calculate damage (this would be more complex in a full implementation)
-        let attacker_stats = game_state.get_entity_stats(self.attacker)
+        let attacker_stats = game_state
+            .get_entity_stats(self.attacker)
             .ok_or_else(|| ThatchError::InvalidState("Attacker stats not found".to_string()))?;
-        
+
         let base_damage = attacker_stats.attack;
         let actual_damage = base_damage + rand::random::<u32>() % 10; // Add some randomness
-        
+
         // Apply damage to target
         let events = vec![GameEvent::EntityDamaged {
             entity_id: self.target,
             damage: actual_damage,
             source: Some(self.attacker),
         }];
-        
+
         Ok(events)
     }
-    
+
     fn validate(&self, game_state: &crate::GameState) -> ThatchResult<()> {
         if !game_state.entity_exists(self.attacker) || !game_state.entity_exists(self.target) {
-            return Err(ThatchError::InvalidAction("Entity does not exist".to_string()));
+            return Err(ThatchError::InvalidAction(
+                "Entity does not exist".to_string(),
+            ));
         }
-        
+
         if self.attacker == self.target {
             return Err(ThatchError::InvalidAction("Cannot attack self".to_string()));
         }
-        
+
         Ok(())
     }
-    
+
     fn actor(&self) -> EntityId {
         self.attacker
     }
-    
+
     fn action_type(&self) -> ActionType {
-        ActionType::Attack { target: self.target }
+        ActionType::Attack {
+            target: self.target,
+        }
     }
-    
+
     fn to_json(&self) -> ThatchResult<String> {
         serde_json::to_string(self).map_err(ThatchError::from)
     }
-    
+
     fn time_cost(&self) -> u32 {
         150 // Attack takes more time than movement
     }
-    
+
     fn metadata(&self) -> &HashMap<String, String> {
         &self.metadata
     }
@@ -343,32 +395,77 @@ impl Action for WaitAction {
         // Waiting doesn't generate events, but could heal or restore mana slightly
         Ok(vec![])
     }
-    
+
     fn validate(&self, game_state: &crate::GameState) -> ThatchResult<()> {
         if !game_state.entity_exists(self.actor) {
-            return Err(ThatchError::InvalidAction("Actor entity does not exist".to_string()));
+            return Err(ThatchError::InvalidAction(
+                "Actor entity does not exist".to_string(),
+            ));
         }
         Ok(())
     }
-    
+
     fn actor(&self) -> EntityId {
         self.actor
     }
-    
+
     fn action_type(&self) -> ActionType {
         ActionType::Wait
     }
-    
+
     fn to_json(&self) -> ThatchResult<String> {
         serde_json::to_string(self).map_err(ThatchError::from)
     }
-    
+
     fn time_cost(&self) -> u32 {
         100 // Standard time cost
     }
-    
+
     fn metadata(&self) -> &HashMap<String, String> {
         &self.metadata
+    }
+}
+
+/// Concrete action types for serialization and queue management.
+///
+/// This enum represents all concrete action implementations that can be
+/// stored in the action queue and serialized for save/load and MCP.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum ConcreteAction {
+    Move(MoveAction),
+    Attack(AttackAction),
+    Wait(WaitAction),
+}
+
+impl ConcreteAction {
+    /// Executes the concrete action.
+    pub fn execute(
+        &self,
+        game_state: &mut crate::GameState,
+    ) -> crate::ThatchResult<Vec<crate::GameEvent>> {
+        match self {
+            ConcreteAction::Move(action) => action.execute(game_state),
+            ConcreteAction::Attack(action) => action.execute(game_state),
+            ConcreteAction::Wait(action) => action.execute(game_state),
+        }
+    }
+
+    /// Gets the action type.
+    pub fn action_type(&self) -> ActionType {
+        match self {
+            ConcreteAction::Move(action) => action.action_type(),
+            ConcreteAction::Attack(action) => action.action_type(),
+            ConcreteAction::Wait(action) => action.action_type(),
+        }
+    }
+
+    /// Gets the entity ID that performs this action.
+    pub fn actor(&self) -> EntityId {
+        match self {
+            ConcreteAction::Move(action) => action.actor(),
+            ConcreteAction::Attack(action) => action.actor(),
+            ConcreteAction::Wait(action) => action.actor(),
+        }
     }
 }
 
@@ -376,11 +473,11 @@ impl Action for WaitAction {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ActionQueue {
     /// Queued actions awaiting execution
-    pending_actions: Vec<Box<dyn Action>>,
+    pending_actions: Vec<ConcreteAction>,
     /// Actions currently being processed
-    processing_actions: Vec<Box<dyn Action>>,
+    processing_actions: Vec<ConcreteAction>,
     /// Action history for replay and undo
-    action_history: Vec<Box<dyn Action>>,
+    action_history: Vec<ConcreteAction>,
     /// Maximum history size
     max_history_size: usize,
 }
@@ -395,39 +492,39 @@ impl ActionQueue {
             max_history_size: 1000,
         }
     }
-    
+
     /// Adds an action to the queue.
-    pub fn add_action(&mut self, action: Box<dyn Action>) {
+    pub fn add_action(&mut self, action: ConcreteAction) {
         self.pending_actions.push(action);
     }
-    
+
     /// Gets the next action to execute.
-    pub fn next_action(&mut self) -> Option<Box<dyn Action>> {
+    pub fn next_action(&mut self) -> Option<ConcreteAction> {
         self.pending_actions.pop()
     }
-    
+
     /// Records an executed action in the history.
-    pub fn record_executed_action(&mut self, action: Box<dyn Action>) {
+    pub fn record_executed_action(&mut self, action: ConcreteAction) {
         self.action_history.push(action);
-        
+
         // Trim history if it gets too large
         if self.action_history.len() > self.max_history_size {
             self.action_history.remove(0);
         }
     }
-    
+
     /// Gets the number of pending actions.
     pub fn pending_count(&self) -> usize {
         self.pending_actions.len()
     }
-    
+
     /// Clears all pending actions.
     pub fn clear_pending(&mut self) {
         self.pending_actions.clear();
     }
-    
+
     /// Gets action history for replay or debugging.
-    pub fn get_history(&self) -> &[Box<dyn Action>] {
+    pub fn get_history(&self) -> &[ConcreteAction] {
         &self.action_history
     }
 }
@@ -441,17 +538,17 @@ impl Default for ActionQueue {
 /// Utility functions for creating common actions.
 pub mod actions {
     use super::*;
-    
+
     /// Creates a movement action.
     pub fn move_action(actor: EntityId, direction: Direction) -> Box<dyn Action> {
         Box::new(MoveAction::new(actor, direction))
     }
-    
+
     /// Creates an attack action.
     pub fn attack_action(attacker: EntityId, target: EntityId) -> Box<dyn Action> {
         Box::new(AttackAction::new(attacker, target))
     }
-    
+
     /// Creates a wait action.
     pub fn wait_action(actor: EntityId) -> Box<dyn Action> {
         Box::new(WaitAction::new(actor))
@@ -462,80 +559,80 @@ pub mod actions {
 mod tests {
     use super::*;
     use crate::{new_entity_id, Position};
-    
+
     #[test]
     fn test_move_action_creation() {
         let actor = new_entity_id();
         let action = MoveAction::new(actor, Direction::North);
-        
+
         assert_eq!(action.actor(), actor);
         assert_eq!(action.action_type(), ActionType::Move(Direction::North));
         assert_eq!(action.time_cost(), 100);
     }
-    
+
     #[test]
     fn test_attack_action_creation() {
         let attacker = new_entity_id();
         let target = new_entity_id();
         let action = AttackAction::new(attacker, target);
-        
+
         assert_eq!(action.actor(), attacker);
         assert_eq!(action.action_type(), ActionType::Attack { target });
         assert_eq!(action.time_cost(), 150);
     }
-    
+
     #[test]
     fn test_wait_action_creation() {
         let actor = new_entity_id();
         let action = WaitAction::new(actor);
-        
+
         assert_eq!(action.actor(), actor);
         assert_eq!(action.action_type(), ActionType::Wait);
         assert_eq!(action.time_cost(), 100);
     }
-    
+
     #[test]
     fn test_action_result_creation() {
         let events = vec![GameEvent::Message {
             text: "Test event".to_string(),
             importance: crate::MessageImportance::Normal,
         }];
-        
+
         let result = ActionResult::success(events.clone(), 100);
         assert!(result.success);
         assert_eq!(result.events, events);
         assert_eq!(result.time_cost, 100);
-        
+
         let failure = ActionResult::failure("Test error".to_string(), 50);
         assert!(!failure.success);
         assert_eq!(failure.error_message, Some("Test error".to_string()));
         assert_eq!(failure.time_cost, 50);
     }
-    
+
     #[test]
     fn test_action_queue() {
         let mut queue = ActionQueue::new();
         let actor = new_entity_id();
-        
+
         assert_eq!(queue.pending_count(), 0);
-        
-        let action = actions::wait_action(actor);
+
+        let action = ConcreteAction::Wait(WaitAction::new(actor));
         queue.add_action(action);
-        
+
         assert_eq!(queue.pending_count(), 1);
-        
+
         let next = queue.next_action();
         assert!(next.is_some());
         assert_eq!(queue.pending_count(), 0);
     }
-    
+
     #[test]
     fn test_action_serialization() {
         let actor = new_entity_id();
         let action = MoveAction::new(actor, Direction::East);
-        
+
         let json = action.to_json().unwrap();
-        
+
         // Should be valid JSON
         let _: serde_json::Value = serde_json::from_str(&json).unwrap();
     }
