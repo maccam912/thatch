@@ -2,11 +2,18 @@
 //!
 //! UI components for health bars, inventory, messages, and other interface elements using macroquad.
 
-use crate::{GameCompletionState, ThatchResult};
+use crate::{ThatchResult};
+use crate::game::{GameCompletionState, TileType};
 use macroquad::prelude::*;
 
 /// UI component for rendering game screens.
 pub struct UI;
+
+impl Default for UI {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl UI {
     /// Creates a new UI instance.
@@ -65,25 +72,25 @@ impl UI {
     /// Renders tooltips for special tiles.
     pub fn render_tile_tooltip(
         &self,
-        tile_type: &crate::TileType,
+        tile_type: &TileType,
         x: f32,
         y: f32,
     ) -> ThatchResult<()> {
         let tooltip_text = match tile_type {
-            crate::TileType::StairsUp => {
+            TileType::StairsUp => {
                 "Stairs Up - Press '1' to ascend (Warning: Exiting at level 1 ends the game!)"
             }
-            crate::TileType::StairsDown => {
+            TileType::StairsDown => {
                 "Stairs Down - Press '2' to descend to the next level"
             }
-            crate::TileType::Door { is_open } => {
+            TileType::Door { is_open } => {
                 if *is_open {
                     "Open Door - Press 'C' to close"
                 } else {
                     "Closed Door - Press 'O' to open"
                 }
             }
-            crate::TileType::Special { description } => description,
+            TileType::Special { description } => description,
             _ => return Ok(()), // No tooltip for regular tiles
         };
 

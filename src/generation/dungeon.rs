@@ -7,10 +7,9 @@
 //! and can be enhanced by the LLDM for unique architectural features.
 
 use crate::generation::utils;
-use crate::{
-    GenerationConfig, Generator, Level, Position, Room, RoomType, ThatchError, ThatchResult, Tile,
-    TileType,
-};
+use crate::{ThatchError, ThatchResult};
+use crate::game::{Level, Position, Tile, TileType};
+use crate::generation::{GenerationConfig, Generator, Room, RoomType};
 use rand::{rngs::StdRng, Rng};
 use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet, VecDeque};
@@ -286,6 +285,7 @@ impl RoomCorridorGenerator {
     }
 
     /// Validates room placement based on strategy.
+    #[allow(dead_code)]
     fn validate_room_placement(
         &self,
         room: &Room,
@@ -586,8 +586,8 @@ impl Generator<Level> for RoomCorridorGenerator {
         // Create level with reasonable dimensions
         let estimated_width = ((config.max_rooms * config.max_room_size * 2) as f64).sqrt() as u32;
         let estimated_height = estimated_width;
-        let width = estimated_width.max(50).min(200); // Reasonable bounds
-        let height = estimated_height.max(50).min(200);
+        let width = estimated_width.clamp(50, 200); // Reasonable bounds
+        let height = estimated_height.clamp(50, 200);
         let mut level = Level::new(0, width, height);
 
         // Step 1: Place rooms (overlapping allowed)
@@ -672,7 +672,6 @@ impl Default for RoomCorridorGenerator {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config;
 
     #[test]
     fn test_room_corridor_generator_creation() {

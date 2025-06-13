@@ -11,6 +11,12 @@ pub use ui::*;
 /// Placeholder rendering system for macroquad graphics output.
 pub struct Renderer;
 
+impl Default for Renderer {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Renderer {
     /// Creates a new renderer instance.
     pub fn new() -> Self {

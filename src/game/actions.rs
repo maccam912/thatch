@@ -661,7 +661,7 @@ impl Default for ActionQueue {
 }
 
 /// Utility functions for creating common actions.
-pub mod actions {
+pub mod utils {
     use super::*;
 
     /// Creates a movement action.
@@ -683,7 +683,7 @@ pub mod actions {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{new_entity_id, Position};
+    use crate::new_entity_id;
 
     #[test]
     fn test_move_action_creation() {

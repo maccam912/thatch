@@ -2,7 +2,8 @@
 //!
 //! Screen management and 2D graphics rendering functionality using macroquad.
 
-use crate::{Entity, GameState, Position, ThatchError, ThatchResult, TileType};
+use crate::{ThatchError, ThatchResult};
+use crate::game::{Entity, GameState, Position, TileType, ConcreteEntity};
 use macroquad::prelude::*;
 use std::collections::HashMap;
 
@@ -186,7 +187,7 @@ impl MacroquadDisplay {
         if let Some(entity_id) = game_state.get_entity_at_position(world_pos) {
             if let Some(entity) = game_state.entities.get(&entity_id) {
                 let (character, base_color) = match entity {
-                    crate::ConcreteEntity::Player(_) => ('@', YELLOW),
+                    ConcreteEntity::Player(_) => ('@', YELLOW),
                 };
 
                 let color = if is_explored_only { 
@@ -304,20 +305,20 @@ impl MacroquadDisplay {
             if let Some(level) = game_state.world.current_level() {
                 if let Some(tile) = level.get_tile(player.position()) {
                     let tile_name = match &tile.tile_type {
-                        crate::TileType::Floor => "Floor",
-                        crate::TileType::Wall => "Wall",
-                        crate::TileType::Door { is_open } => {
+                        TileType::Floor => "Floor",
+                        TileType::Wall => "Wall",
+                        TileType::Door { is_open } => {
                             if *is_open { "Open Door" } else { "Closed Door" }
                         }
-                        crate::TileType::StairsUp => "Stairs Up",
-                        crate::TileType::StairsDown => "Stairs Down",
-                        crate::TileType::Water => "Water",
-                        crate::TileType::Special { .. } => "Special",
+                        TileType::StairsUp => "Stairs Up",
+                        TileType::StairsDown => "Stairs Down",
+                        TileType::Water => "Water",
+                        TileType::Special { .. } => "Special",
                     };
                     
                     let tile_color = match &tile.tile_type {
-                        crate::TileType::StairsUp => LIGHTGRAY,
-                        crate::TileType::StairsDown => ORANGE,
+                        TileType::StairsUp => LIGHTGRAY,
+                        TileType::StairsDown => ORANGE,
                         _ => WHITE,
                     };
                     
