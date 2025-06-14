@@ -18,6 +18,23 @@ If you prefer not to use Docker, you'll need:
 
 ## Quick Start (Docker Method - Recommended)
 
+### Windows Users
+1. **Setup environment**
+   ```batch
+   setup_android_dev.bat
+   ```
+
+2. **Build APK**
+   ```batch
+   build_android.bat
+   ```
+
+3. **Install on device**
+   ```batch
+   install_apk.bat
+   ```
+
+### Linux/Mac Users
 1. **Ensure Docker is running**
    ```bash
    docker --version
@@ -50,14 +67,54 @@ The Android version includes touch-friendly controls:
 ## Build Options
 
 ### APK Build (for testing/sideloading)
+**Windows:**
+```batch
+build_android.bat
+```
+
+**Linux/Mac:**
 ```bash
 ./build_android.sh
 ```
 
 ### AAB Build (for Google Play Store)
+**Windows:**
+```batch
+build_android_aab.bat
+```
+
+**Linux/Mac:**
 ```bash
 ./build_android_aab.sh
 ```
+
+## Windows Batch Files
+
+The following Windows batch files are available for easy development:
+
+- **`setup_android_dev.bat`** - One-time setup and environment check
+- **`build_android.bat`** - Build APK for testing/sideloading
+- **`build_android_aab.bat`** - Build AAB for Google Play Store
+- **`install_apk.bat`** - Install APK on connected device via ADB
+- **`clean_android.bat`** - Clean build artifacts and free disk space
+
+### Windows Setup Process
+1. **First time setup:**
+   ```batch
+   setup_android_dev.bat
+   ```
+   This checks Docker, Rust, creates directories, and downloads build image.
+
+2. **Daily development:**
+   ```batch
+   build_android.bat
+   install_apk.bat
+   ```
+
+3. **Clean up when needed:**
+   ```batch
+   clean_android.bat
+   ```
 
 ## Configuration
 
