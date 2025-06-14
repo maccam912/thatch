@@ -4,6 +4,8 @@
 
 use crate::{ThatchError, ThatchResult};
 use crate::game::{Entity, GameState, Position, TileType, ConcreteEntity};
+use crate::rendering::UI;
+use crate::input::PlayerInput;
 use macroquad::prelude::*;
 use std::collections::HashMap;
 
@@ -38,6 +40,8 @@ pub struct MacroquadDisplay {
     pub tile_textures: HashMap<char, Texture2D>,
     /// Font for text rendering
     pub font: Option<Font>,
+    /// UI component for touch controls
+    pub ui: UI,
 }
 
 impl MacroquadDisplay {
@@ -75,6 +79,7 @@ impl MacroquadDisplay {
             last_player_pos: None,
             tile_textures: HashMap::new(),
             font: None,
+            ui: UI::new(),
         };
 
         display.initialize_graphics().await?;
@@ -112,7 +117,7 @@ impl MacroquadDisplay {
 
     /// Renders the complete game screen.
     ///
-    /// This includes the map, UI panels, and message area.
+    /// This includes the map, UI panels, message area, and touch controls.
     pub async fn render_game(&mut self, game_state: &GameState) -> ThatchResult<()> {
         // Check if we need to update viewport
         let current_player_pos = game_state.get_player().map(|p| p.position());
@@ -394,6 +399,13 @@ impl MacroquadDisplay {
         }
 
         Ok(())
+    }
+
+    /// Gets touch input from UI controls.
+    ///
+    /// Returns player input if a touch control was activated, None otherwise.
+    pub fn get_touch_input(&self) -> Option<PlayerInput> {
+        self.ui.render_touch_controls()
     }
 
     /// Adds a message to the message history.

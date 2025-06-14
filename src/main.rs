@@ -116,8 +116,12 @@ fn initialize_logging(log_level: &str) -> ThatchResult<()> {
 async fn run_game(args: &Args) -> ThatchResult<()> {
     info!("Initializing macroquad display");
     
-    // Configure window
+    // Configure window for both desktop and mobile
+    // On mobile, this will be overridden by the platform
     request_new_screen_size(1024.0, 768.0);
+    
+    // Enable high DPI support for mobile
+    set_pc_assets_folder("assets");
     
     // Initialize input handler
     let input_handler = thatch::InputHandler::new();
@@ -168,14 +172,17 @@ async fn run_game_loop(
     let mut display = thatch::MacroquadDisplay::new().await?;
 
     display.add_message("Welcome to Thatch Roguelike!".to_string());
-    display.add_message("Use WASD or arrow keys to move, ESC to quit".to_string());
+    display.add_message("Use WASD/arrows or touch controls to move".to_string());
 
     // Main game loop
     loop {
-        // Handle input
+        // Handle input - check both touch and keyboard
         let mut action_executed = false;
         
-        if let Some(input) = input_handler.get_input() {
+        // Get touch input from display
+        let touch_input = display.get_touch_input();
+        
+        if let Some(input) = input_handler.get_input_with_touch(touch_input) {
             match input {
                 thatch::PlayerInput::Quit => {
                     info!("Player quit the game");

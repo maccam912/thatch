@@ -10,7 +10,10 @@
       "Bash(rustc:*)",
       "Bash(rm:*)",
       "Bash(find:*)",
-      "Bash(RUST_BACKTRACE=1 cargo test test_new_algorithm_generation)"
+      "Bash(RUST_BACKTRACE=1 cargo test test_new_algorithm_generation)",
+      "WebFetch(domain:macroquad.rs)",
+      "Bash(chmod:*)",
+      "Bash(docker:*)"
     ],
     "deny": []
   }

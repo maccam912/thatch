@@ -3,7 +3,8 @@
 //! UI components for health bars, inventory, messages, and other interface elements using macroquad.
 
 use crate::{ThatchResult};
-use crate::game::{GameCompletionState, TileType};
+use crate::game::{GameCompletionState, TileType, Position, StairDirection};
+use crate::input::PlayerInput;
 use macroquad::prelude::*;
 
 /// UI component for rendering game screens.
@@ -119,5 +120,123 @@ impl UI {
                 Ok(())
             }
         }
+    }
+
+    /// Renders touch-friendly control buttons and handles touch input.
+    ///
+    /// Returns the player input if a button was pressed, None otherwise.
+    pub fn render_touch_controls(&self) -> Option<PlayerInput> {
+        let screen_w = screen_width();
+        let screen_h = screen_height();
+        
+        // Button dimensions
+        let button_size = 60.0;
+        let button_margin = 10.0;
+        
+        // Movement pad (left side)
+        let pad_x = button_margin;
+        let pad_y = screen_h - (button_size * 3.0 + button_margin * 4.0);
+        
+        // Check movement buttons
+        if let Some(input) = self.render_movement_pad(pad_x, pad_y, button_size, button_margin) {
+            return Some(input);
+        }
+        
+        // Action buttons (right side)
+        let action_x = screen_w - (button_size * 2.0 + button_margin * 3.0);
+        let action_y = screen_h - (button_size * 3.0 + button_margin * 4.0);
+        
+        if let Some(input) = self.render_action_buttons(action_x, action_y, button_size, button_margin) {
+            return Some(input);
+        }
+        
+        None
+    }
+    
+    /// Renders the movement directional pad.
+    fn render_movement_pad(&self, x: f32, y: f32, size: f32, margin: f32) -> Option<PlayerInput> {
+        let mut input = None;
+        
+        // Up button
+        if self.render_button("↑", x + size + margin, y, size, size, BLUE) {
+            input = Some(PlayerInput::Move(Position::new(0, -1)));
+        }
+        
+        // Left button  
+        if self.render_button("←", x, y + size + margin, size, size, BLUE) {
+            input = Some(PlayerInput::Move(Position::new(-1, 0)));
+        }
+        
+        // Center (wait) button
+        if self.render_button("⏸", x + size + margin, y + size + margin, size, size, GRAY) {
+            input = Some(PlayerInput::Wait);
+        }
+        
+        // Right button
+        if self.render_button("→", x + (size + margin) * 2.0, y + size + margin, size, size, BLUE) {
+            input = Some(PlayerInput::Move(Position::new(1, 0)));
+        }
+        
+        // Down button
+        if self.render_button("↓", x + size + margin, y + (size + margin) * 2.0, size, size, BLUE) {
+            input = Some(PlayerInput::Move(Position::new(0, 1)));
+        }
+        
+        input
+    }
+    
+    /// Renders action buttons for stairs and autoexplore.
+    fn render_action_buttons(&self, x: f32, y: f32, size: f32, margin: f32) -> Option<PlayerInput> {
+        let mut input = None;
+        
+        // Up stairs button
+        if self.render_button("⬆", x, y, size, size, GREEN) {
+            input = Some(PlayerInput::UseStairs(StairDirection::Up));
+        }
+        
+        // Down stairs button  
+        if self.render_button("⬇", x + size + margin, y, size, size, GREEN) {
+            input = Some(PlayerInput::UseStairs(StairDirection::Down));
+        }
+        
+        // Autoexplore button
+        if self.render_button("🔍", x, y + size + margin, size, size, YELLOW) {
+            input = Some(PlayerInput::ToggleAutoexplore);
+        }
+        
+        // Help button
+        if self.render_button("?", x + size + margin, y + size + margin, size, size, ORANGE) {
+            input = Some(PlayerInput::Help);
+        }
+        
+        input
+    }
+    
+    /// Renders a single button and returns true if it was pressed.
+    fn render_button(&self, text: &str, x: f32, y: f32, width: f32, height: f32, color: Color) -> bool {
+        let mouse_pos = mouse_position();
+        let is_hovered = mouse_pos.0 >= x && mouse_pos.0 <= x + width && 
+                        mouse_pos.1 >= y && mouse_pos.1 <= y + height;
+        
+        let button_color = if is_hovered { 
+            Color::new(color.r * 1.2, color.g * 1.2, color.b * 1.2, color.a)
+        } else { 
+            color 
+        };
+        
+        // Draw button background
+        draw_rectangle(x, y, width, height, button_color);
+        draw_rectangle_lines(x, y, width, height, 2.0, WHITE);
+        
+        // Draw button text
+        let text_size = 24.0;
+        let text_width = text.len() as f32 * text_size * 0.6;
+        let text_x = x + (width - text_width) / 2.0;
+        let text_y = y + height / 2.0 + text_size / 2.0;
+        
+        draw_text(text, text_x, text_y, text_size, WHITE);
+        
+        // Check if button was pressed
+        is_hovered && is_mouse_button_pressed(MouseButton::Left)
     }
 }

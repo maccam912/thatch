@@ -52,6 +52,19 @@ impl InputHandler {
         self.process_macroquad_input()
     }
 
+    /// Gets the current input, checking both keyboard and provided touch input.
+    ///
+    /// Returns the corresponding player input, or None if no input is detected.
+    pub fn get_input_with_touch(&self, touch_input: Option<PlayerInput>) -> Option<PlayerInput> {
+        // Check touch input first (higher priority for mobile)
+        if let Some(input) = touch_input {
+            return Some(input);
+        }
+        
+        // Fall back to keyboard input
+        self.process_macroquad_input()
+    }
+
     /// Processes macroquad input and returns the corresponding player input.
     fn process_macroquad_input(&self) -> Option<PlayerInput> {
         // Check for quit

@@ -59,6 +59,26 @@ codegen-units = 1
 inherits = "dev"
 opt-level = 2
 
+# Android configuration
+[package.metadata.android]
+assets = "assets/"
+icon = "@mipmap/ic_launcher"
+build_targets = [
+    "armv7-linux-androideabi", 
+    "aarch64-linux-android", 
+    "i686-linux-android", 
+    "x86_64-linux-android"
+]
+version_code = 1
+version_name = "0.1.0"
+
+[package.metadata.android.activity_attributes]
+"android:exported" = "true"
+"android:screenOrientation" = "userLandscape"
+
+[package.metadata.android.application]
+theme = "@android:style/Theme.DeviceDefault.NoActionBar.Fullscreen"
+
 # Benchmarks will be added later
 # [[bench]]
 # name = "benchmarks"
