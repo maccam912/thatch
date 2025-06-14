@@ -3,11 +3,11 @@
 //! Debug functionality for automatically exploring dungeons and navigating between levels.
 
 use crate::{
-    GameState, Position, ThatchError, ThatchResult, TileType, Direction,
-    ConcreteAction, MoveAction, UseStairsAction, StairDirection, Entity,
+    ConcreteAction, Direction, Entity, GameState, MoveAction, Position, StairDirection,
+    ThatchError, ThatchResult, TileType, UseStairsAction,
 };
-use std::collections::{HashMap, BinaryHeap};
 use std::cmp::Ordering;
+use std::collections::{BinaryHeap, HashMap};
 
 /// Autoexplore state and functionality for debug mode.
 #[derive(Debug, Clone)]
@@ -32,7 +32,7 @@ impl AutoexploreState {
             current_path: Vec::new(),
             target: None,
             last_action_time: None,
-            action_delay_ms: 500, // 500ms between actions = 2 actions per second (slower for stability)
+            action_delay_ms: 50, // 50ms between actions = 20 actions per second (10x faster)
         }
     }
 
@@ -63,16 +63,20 @@ impl AutoexploreState {
     }
 
     /// Gets the next autoexplore action to perform.
-    pub fn get_next_action(&mut self, game_state: &GameState) -> ThatchResult<Option<ConcreteAction>> {
+    pub fn get_next_action(
+        &mut self,
+        game_state: &GameState,
+    ) -> ThatchResult<Option<ConcreteAction>> {
         if !self.enabled {
             return Ok(None);
         }
-        
+
         if !self.can_perform_action() {
             return Ok(None);
         }
 
-        let player = game_state.get_player()
+        let player = game_state
+            .get_player()
             .ok_or_else(|| ThatchError::InvalidState("No player found".to_string()))?;
         let player_pos = player.position();
         let player_id = player.id();
@@ -83,7 +87,9 @@ impl AutoexploreState {
                 if tile.tile_type == TileType::StairsDown {
                     // Safety check: ensure the next level exists before using stairs
                     let current_level_id = game_state.world.current_level_id;
-                    if current_level_id < 25 && game_state.world.get_level(current_level_id + 1).is_some() {
+                    if current_level_id < 25
+                        && game_state.world.get_level(current_level_id + 1).is_some()
+                    {
                         // We're on stairs down and next level exists, use them
                         self.mark_action_performed();
                         return Ok(Some(ConcreteAction::UseStairs(UseStairsAction::new(
@@ -93,7 +99,9 @@ impl AutoexploreState {
                     } else {
                         // Can't go down further, disable autoexplore
                         self.enabled = false;
-                        return Err(ThatchError::InvalidState("Reached bottom of dungeon, disabling autoexplore".to_string()));
+                        return Err(ThatchError::InvalidState(
+                            "Reached bottom of dungeon, disabling autoexplore".to_string(),
+                        ));
                     }
                 }
             }
@@ -120,12 +128,14 @@ impl AutoexploreState {
             if let Some(path) = self.find_path(game_state, player_pos, stairs_down_pos)? {
                 // Safety check: limit path length to prevent infinite loops
                 if path.len() > 1000 {
-                    return Err(ThatchError::InvalidState("Autoexplore path too long".to_string()));
+                    return Err(ThatchError::InvalidState(
+                        "Autoexplore path too long".to_string(),
+                    ));
                 }
-                
+
                 self.current_path = path;
                 self.target = Some(stairs_down_pos);
-                
+
                 // Return the first move in the path
                 if !self.current_path.is_empty() {
                     let next_pos = self.current_path.remove(0);
@@ -141,12 +151,16 @@ impl AutoexploreState {
             } else {
                 // No path found to stairs, disable autoexplore
                 self.enabled = false;
-                return Err(ThatchError::InvalidState("No path to stairs found, disabling autoexplore".to_string()));
+                return Err(ThatchError::InvalidState(
+                    "No path to stairs found, disabling autoexplore".to_string(),
+                ));
             }
         } else {
             // No stairs found, disable autoexplore
             self.enabled = false;
-            return Err(ThatchError::InvalidState("No stairs down found, disabling autoexplore".to_string()));
+            return Err(ThatchError::InvalidState(
+                "No stairs down found, disabling autoexplore".to_string(),
+            ));
         }
 
         // No stairs down found or no path available
@@ -172,7 +186,9 @@ impl AutoexploreState {
         start: Position,
         goal: Position,
     ) -> ThatchResult<Option<Vec<Position>>> {
-        let level = game_state.world.current_level()
+        let level = game_state
+            .world
+            .current_level()
             .ok_or_else(|| ThatchError::InvalidState("No current level".to_string()))?;
 
         // A* algorithm implementation
@@ -195,12 +211,12 @@ impl AutoexploreState {
                 // Reconstruct path
                 let mut path = Vec::new();
                 let mut current_pos = goal;
-                
+
                 while let Some(&prev) = came_from.get(&current_pos) {
                     path.push(current_pos);
                     current_pos = prev;
                 }
-                
+
                 path.reverse();
                 return Ok(Some(path));
             }
@@ -283,7 +299,7 @@ impl Ord for AStarNode {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{Level, Tile, GameState};
+    use crate::{GameState, Level, Tile};
 
     #[test]
     fn test_autoexplore_state_creation() {
@@ -296,11 +312,11 @@ mod tests {
     #[test]
     fn test_autoexplore_toggle() {
         let mut autoexplore = AutoexploreState::new();
-        
+
         // Toggle on
         assert!(autoexplore.toggle());
         assert!(autoexplore.enabled);
-        
+
         // Toggle off
         assert!(!autoexplore.toggle());
         assert!(!autoexplore.enabled);
@@ -309,40 +325,49 @@ mod tests {
     #[test]
     fn test_direction_calculation() {
         let autoexplore = AutoexploreState::new();
-        
+
         let from = Position::new(5, 5);
         let to = Position::new(5, 4); // North
-        assert_eq!(autoexplore.get_direction_to_position(from, to), Some(Direction::North));
-        
+        assert_eq!(
+            autoexplore.get_direction_to_position(from, to),
+            Some(Direction::North)
+        );
+
         let to = Position::new(6, 5); // East
-        assert_eq!(autoexplore.get_direction_to_position(from, to), Some(Direction::East));
-        
+        assert_eq!(
+            autoexplore.get_direction_to_position(from, to),
+            Some(Direction::East)
+        );
+
         let to = Position::new(4, 5); // West
-        assert_eq!(autoexplore.get_direction_to_position(from, to), Some(Direction::West));
+        assert_eq!(
+            autoexplore.get_direction_to_position(from, to),
+            Some(Direction::West)
+        );
     }
 
     #[test]
     fn test_pathfinding() {
         let autoexplore = AutoexploreState::new();
-        
+
         // Create a simple level
         let mut level = Level::new(0, 10, 10);
-        
+
         // Create a corridor from (1,1) to (8,1)
         for x in 1..9 {
             level.set_tile(Position::new(x, 1), Tile::floor()).unwrap();
         }
-        
+
         // Create game state
         let game_state = GameState::new_with_level(level, 12345).unwrap();
-        
+
         // Test pathfinding
         let start = Position::new(1, 1);
         let goal = Position::new(8, 1);
-        
+
         let path = autoexplore.find_path(&game_state, start, goal).unwrap();
         assert!(path.is_some());
-        
+
         let path = path.unwrap();
         assert!(!path.is_empty());
         assert_eq!(path[path.len() - 1], goal);

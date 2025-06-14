@@ -4,9 +4,7 @@
 
 use clap::Parser;
 use macroquad::prelude::*;
-use thatch::{
-    Entity, GameState, PlayerCharacter, ThatchError, ThatchResult,
-};
+use thatch::{Entity, GameState, PlayerCharacter, ThatchError, ThatchResult};
 #[cfg(feature = "dev-tools")]
 use tracing::{error, info, Level};
 #[cfg(feature = "dev-tools")]
@@ -114,14 +112,14 @@ fn initialize_logging(log_level: &str) -> ThatchResult<()> {
 /// Runs the main game loop with macroquad graphics.
 async fn run_game(args: &Args) -> ThatchResult<()> {
     info!("Initializing macroquad display");
-    
+
     // Configure window for both desktop and mobile
     // On mobile, this will be overridden by the platform
     request_new_screen_size(1024.0, 768.0);
-    
+
     // Enable high DPI support for mobile
     set_pc_assets_folder("assets");
-    
+
     // Initialize input handler
     let input_handler = thatch::InputHandler::new();
 
@@ -129,10 +127,7 @@ async fn run_game(args: &Args) -> ThatchResult<()> {
 }
 
 /// Main game loop implementation.
-async fn run_game_loop(
-    args: &Args,
-    input_handler: &thatch::InputHandler,
-) -> ThatchResult<()> {
+async fn run_game_loop(args: &Args, input_handler: &thatch::InputHandler) -> ThatchResult<()> {
     // Generate a proper dungeon level
     let seed = args.seed.unwrap_or(12345);
 
@@ -169,10 +164,10 @@ async fn run_game_loop(
     loop {
         // Handle input - check both touch and keyboard
         let mut action_executed = false;
-        
+
         // Get touch input from display
         let touch_input = display.get_touch_input();
-        
+
         if let Some(input) = input_handler.get_input_with_touch(touch_input) {
             match input {
                 thatch::PlayerInput::Quit => {
@@ -181,7 +176,9 @@ async fn run_game_loop(
                 }
 
                 thatch::PlayerInput::Help => {
-                    display.add_message("Help: WASD/arrows=move, ESC=quit, SPACE=wait, F12=autoexplore".to_string());
+                    display.add_message(
+                        "Help: WASD/arrows=move, ESC=quit, SPACE=wait, F12=autoexplore".to_string(),
+                    );
                     // Don't use continue - need to render and wait for next frame
                 }
 
@@ -217,6 +214,67 @@ async fn run_game_loop(
                                     }
                                 }
 
+                                // Check immediately if the game ended from this action
+                                if game_state.is_game_ended() {
+                                    // Show ending screen immediately
+                                    display
+                                        .ui
+                                        .render_ending_screen(game_state.get_completion_state())
+                                        .await?;
+                                    next_frame().await;
+
+                                    // Wait for restart/quit input
+                                    loop {
+                                        if is_key_pressed(KeyCode::N) {
+                                            // Restart game with new dungeon
+                                            let new_seed = std::time::SystemTime::now()
+                                                .duration_since(std::time::UNIX_EPOCH)
+                                                .unwrap()
+                                                .as_secs();
+                                            info!("Starting new game with seed: {}", new_seed);
+
+                                            game_state =
+                                                GameState::new_with_complete_dungeon(new_seed)?;
+
+                                            // Create and place new player
+                                            let player_pos = if let Some(level) =
+                                                game_state.world.current_level()
+                                            {
+                                                level.player_spawn
+                                            } else {
+                                                return Err(ThatchError::InvalidState(
+                                                    "No current level".to_string(),
+                                                ));
+                                            };
+                                            let player = PlayerCharacter::new(
+                                                "Player".to_string(),
+                                                player_pos,
+                                            );
+                                            let player_id = game_state.add_entity(player.into())?;
+                                            game_state.set_player_id(player_id);
+
+                                            // Initialize player visibility
+                                            if let Some(player) = game_state.get_player() {
+                                                game_state
+                                                    .update_player_visibility(player.position())?;
+                                            }
+
+                                            display.add_message("New game started!".to_string());
+                                            break; // Exit the ending screen loop
+                                        } else if is_key_pressed(KeyCode::Escape) {
+                                            info!("Player quit from ending screen");
+                                            return Ok(()); // Exit the entire game
+                                        }
+
+                                        // Re-render ending screen
+                                        display
+                                            .ui
+                                            .render_ending_screen(game_state.get_completion_state())
+                                            .await?;
+                                        next_frame().await;
+                                    }
+                                }
+
                                 // Advance the turn
                                 game_state.advance_turn()?;
                                 action_executed = true;
@@ -247,6 +305,62 @@ async fn run_game_loop(
                                 if let thatch::GameEvent::Message { text, .. } = response_event {
                                     display.add_message(text);
                                 }
+                            }
+                        }
+
+                        // Check immediately if the game ended from autoexplore action
+                        if game_state.is_game_ended() {
+                            // Show ending screen immediately
+                            display
+                                .ui
+                                .render_ending_screen(game_state.get_completion_state())
+                                .await?;
+                            next_frame().await;
+
+                            // Wait for restart/quit input
+                            loop {
+                                if is_key_pressed(KeyCode::N) {
+                                    // Restart game with new dungeon
+                                    let new_seed = std::time::SystemTime::now()
+                                        .duration_since(std::time::UNIX_EPOCH)
+                                        .unwrap()
+                                        .as_secs();
+                                    info!("Starting new game with seed: {}", new_seed);
+
+                                    game_state = GameState::new_with_complete_dungeon(new_seed)?;
+
+                                    // Create and place new player
+                                    let player_pos =
+                                        if let Some(level) = game_state.world.current_level() {
+                                            level.player_spawn
+                                        } else {
+                                            return Err(ThatchError::InvalidState(
+                                                "No current level".to_string(),
+                                            ));
+                                        };
+                                    let player =
+                                        PlayerCharacter::new("Player".to_string(), player_pos);
+                                    let player_id = game_state.add_entity(player.into())?;
+                                    game_state.set_player_id(player_id);
+
+                                    // Initialize player visibility
+                                    if let Some(player) = game_state.get_player() {
+                                        game_state.update_player_visibility(player.position())?;
+                                    }
+
+                                    display.add_message("New game started!".to_string());
+                                    break; // Exit the ending screen loop
+                                } else if is_key_pressed(KeyCode::Escape) {
+                                    info!("Player quit from ending screen");
+                                    return Ok(()); // Exit the entire game
+                                }
+
+                                // Re-render ending screen
+                                display
+                                    .ui
+                                    .render_ending_screen(game_state.get_completion_state())
+                                    .await?;
+                                next_frame().await;
                             }
                         }
 

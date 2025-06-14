@@ -2,10 +2,10 @@
 //!
 //! Screen management and 2D graphics rendering functionality using macroquad.
 
-use crate::{ThatchError, ThatchResult};
-use crate::game::{Entity, GameState, Position, TileType, ConcreteEntity};
-use crate::rendering::UI;
+use crate::game::{ConcreteEntity, Entity, GameState, Position, TileType};
 use crate::input::PlayerInput;
+use crate::rendering::UI;
+use crate::{ThatchError, ThatchResult};
 use macroquad::prelude::*;
 use std::collections::HashMap;
 
@@ -58,7 +58,7 @@ impl MacroquadDisplay {
     pub async fn new() -> ThatchResult<Self> {
         let screen_width = screen_width();
         let screen_height = screen_height();
-        
+
         // Tile size and layout calculations
         let tile_size = 24.0;
         let ui_panel_width = 300.0;
@@ -90,7 +90,7 @@ impl MacroquadDisplay {
     async fn initialize_graphics(&mut self) -> ThatchResult<()> {
         // Create simple tile textures using rectangles
         self.create_tile_textures().await;
-        
+
         Ok(())
     }
 
@@ -98,10 +98,10 @@ impl MacroquadDisplay {
     async fn create_tile_textures(&mut self) {
         // For now, we'll just use colored rectangles for tiles
         // In a real implementation, you'd load actual texture files
-        
+
         // Create a simple 1x1 white texture that we can tint
         let white_texture = Texture2D::from_rgba8(1, 1, &[255, 255, 255, 255]);
-        
+
         // Map characters to the base texture (we'll use colors to differentiate)
         // Note: In macroquad, textures are reference-counted, so cloning is cheap
         self.tile_textures.insert('#', white_texture.clone()); // Wall
@@ -135,7 +135,7 @@ impl MacroquadDisplay {
         self.render_map(game_state)?;
         self.render_ui(game_state)?;
         self.render_messages()?;
-        
+
         // Always render touch controls for all platforms
         self.ui.render_touch_controls();
 
@@ -166,12 +166,24 @@ impl MacroquadDisplay {
 
                 if let Some(tile) = level.get_tile(world_pos) {
                     if tile.is_visible() {
-                        self.render_tile_at_position(game_state, world_pos, &tile.tile_type, 
-                                                   screen_pixel_x, screen_pixel_y, false);
+                        self.render_tile_at_position(
+                            game_state,
+                            world_pos,
+                            &tile.tile_type,
+                            screen_pixel_x,
+                            screen_pixel_y,
+                            false,
+                        );
                     } else if tile.is_explored() {
                         // Render explored but not visible tiles in darker color
-                        self.render_tile_at_position(game_state, world_pos, &tile.tile_type, 
-                                                   screen_pixel_x, screen_pixel_y, true);
+                        self.render_tile_at_position(
+                            game_state,
+                            world_pos,
+                            &tile.tile_type,
+                            screen_pixel_x,
+                            screen_pixel_y,
+                            true,
+                        );
                     }
                     // Don't render unexplored tiles (leave them black)
                 }
@@ -198,10 +210,15 @@ impl MacroquadDisplay {
                     ConcreteEntity::Player(_) => ('@', YELLOW),
                 };
 
-                let color = if is_explored_only { 
-                    Color::new(base_color.r * 0.4, base_color.g * 0.4, base_color.b * 0.4, base_color.a)
-                } else { 
-                    base_color 
+                let color = if is_explored_only {
+                    Color::new(
+                        base_color.r * 0.4,
+                        base_color.g * 0.4,
+                        base_color.b * 0.4,
+                        base_color.a,
+                    )
+                } else {
+                    base_color
                 };
 
                 if let Some(texture) = self.tile_textures.get(&character) {
@@ -222,10 +239,15 @@ impl MacroquadDisplay {
 
         // No entity, render the tile
         let (character, base_color) = self.get_tile_display_data(tile_type);
-        let color = if is_explored_only { 
-            Color::new(base_color.r * 0.4, base_color.g * 0.4, base_color.b * 0.4, base_color.a)
-        } else { 
-            base_color 
+        let color = if is_explored_only {
+            Color::new(
+                base_color.r * 0.4,
+                base_color.g * 0.4,
+                base_color.b * 0.4,
+                base_color.a,
+            )
+        } else {
+            base_color
         };
 
         if let Some(texture) = self.tile_textures.get(&character) {
@@ -273,11 +295,20 @@ impl MacroquadDisplay {
 
         // Render player stats if available
         if let Some(player) = game_state.get_player() {
-            draw_text(&format!("Player: {}", player.name), panel_x, line_y, 18.0, YELLOW);
+            draw_text(
+                &format!("Player: {}", player.name),
+                panel_x,
+                line_y,
+                18.0,
+                YELLOW,
+            );
             line_y += line_height;
 
             draw_text(
-                &format!("Health: {}/{}", player.stats.health, player.stats.max_health),
+                &format!(
+                    "Health: {}/{}",
+                    player.stats.health, player.stats.max_health
+                ),
                 panel_x,
                 line_y,
                 18.0,
@@ -294,13 +325,31 @@ impl MacroquadDisplay {
             );
             line_y += line_height;
 
-            draw_text(&format!("Dungeon Level: {}", game_state.world.current_level_id + 1), panel_x, line_y, 18.0, WHITE);
-            line_y += line_height;
-            
-            draw_text(&format!("Character Level: {}", player.stats.level), panel_x, line_y, 18.0, WHITE);
+            draw_text(
+                &format!("Dungeon Level: {}", game_state.world.current_level_id + 1),
+                panel_x,
+                line_y,
+                18.0,
+                WHITE,
+            );
             line_y += line_height;
 
-            draw_text(&format!("XP: {}", player.stats.experience), panel_x, line_y, 18.0, WHITE);
+            draw_text(
+                &format!("Character Level: {}", player.stats.level),
+                panel_x,
+                line_y,
+                18.0,
+                WHITE,
+            );
+            line_y += line_height;
+
+            draw_text(
+                &format!("XP: {}", player.stats.experience),
+                panel_x,
+                line_y,
+                18.0,
+                WHITE,
+            );
             line_y += line_height * 2.0;
 
             draw_text(
@@ -319,20 +368,24 @@ impl MacroquadDisplay {
                         TileType::Floor => "Floor",
                         TileType::Wall => "Wall",
                         TileType::Door { is_open } => {
-                            if *is_open { "Open Door" } else { "Closed Door" }
+                            if *is_open {
+                                "Open Door"
+                            } else {
+                                "Closed Door"
+                            }
                         }
                         TileType::StairsUp => "Stairs Up",
                         TileType::StairsDown => "Stairs Down",
                         TileType::Water => "Water",
                         TileType::Special { .. } => "Special",
                     };
-                    
+
                     let tile_color = match &tile.tile_type {
                         TileType::StairsUp => LIGHTGRAY,
                         TileType::StairsDown => ORANGE,
                         _ => WHITE,
                     };
-                    
+
                     draw_text(
                         &format!("Standing on: {}", tile_name),
                         panel_x,
@@ -350,7 +403,13 @@ impl MacroquadDisplay {
         draw_text("Game Info:", panel_x, line_y, 18.0, SKYBLUE);
         line_y += line_height;
 
-        draw_text(&format!("Turn: {}", time_info.turn_number), panel_x, line_y, 18.0, WHITE);
+        draw_text(
+            &format!("Turn: {}", time_info.turn_number),
+            panel_x,
+            line_y,
+            18.0,
+            WHITE,
+        );
         line_y += line_height;
 
         draw_text(
@@ -366,18 +425,42 @@ impl MacroquadDisplay {
         draw_text("Controls:", panel_x, line_y, 18.0, GREEN);
         line_y += line_height;
 
-        let controls = [
+        // Always available controls
+        let basic_controls = [
             "WASD/Arrow keys: Move",
-            "1: Go up stairs (<)",
-            "2: Go down stairs (>)",
             "SPACE: Wait",
             "ESC: Quit",
             "F1: Help",
         ];
 
-        for control in &controls {
+        for control in &basic_controls {
             draw_text(control, panel_x, line_y, 16.0, WHITE);
             line_y += line_height;
+        }
+
+        // Conditional stair controls based on player position
+        if let Some(player) = game_state.get_player() {
+            if let Some(level) = game_state.world.current_level() {
+                if let Some(tile) = level.get_tile(player.position()) {
+                    match tile.tile_type {
+                        TileType::StairsUp => {
+                            draw_text("1: Go up stairs (<)", panel_x, line_y, 16.0, WHITE);
+                            line_y += line_height;
+                        }
+                        TileType::StairsDown => {
+                            draw_text("2: Go down stairs (>)", panel_x, line_y, 16.0, WHITE);
+                            line_y += line_height;
+                        }
+                        _ => {
+                            // Show greyed out stair options when not on stairs
+                            draw_text("1: Go up stairs (<)", panel_x, line_y, 16.0, GRAY);
+                            line_y += line_height;
+                            draw_text("2: Go down stairs (>)", panel_x, line_y, 16.0, GRAY);
+                            line_y += line_height;
+                        }
+                    }
+                }
+            }
         }
 
         Ok(())
@@ -390,7 +473,13 @@ impl MacroquadDisplay {
         let line_height = 18.0;
 
         // Draw background for message area
-        draw_rectangle(0.0, message_area_y - 10.0, self.screen_width, 90.0, Color::new(0.0, 0.0, 0.0, 0.8));
+        draw_rectangle(
+            0.0,
+            message_area_y - 10.0,
+            self.screen_width,
+            90.0,
+            Color::new(0.0, 0.0, 0.0, 0.8),
+        );
 
         // Render messages
         let start_index = if self.messages.len() > message_count {

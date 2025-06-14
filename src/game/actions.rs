@@ -451,18 +451,18 @@ impl UseStairsAction {
 impl Action for UseStairsAction {
     fn execute(&self, game_state: &mut crate::GameState) -> ThatchResult<Vec<GameEvent>> {
         let mut events = Vec::new();
-        
+
         // Check if player is on appropriate stairs
         if let Some(player) = game_state.get_player() {
             let player_pos = player.position();
-            
+
             if let Some(level) = game_state.world.current_level() {
                 if let Some(tile) = level.get_tile(player_pos) {
                     let valid_stairs = match self.direction {
                         StairDirection::Up => tile.tile_type == crate::TileType::StairsUp,
                         StairDirection::Down => tile.tile_type == crate::TileType::StairsDown,
                     };
-                    
+
                     if !valid_stairs {
                         return Err(ThatchError::InvalidAction(
                             "No appropriate stairs at current position".to_string(),
@@ -474,13 +474,21 @@ impl Action for UseStairsAction {
 
         // Attempt to use stairs
         let level_changed = game_state.use_stairs(self.direction.clone())?;
-        
+
         if level_changed {
             events.push(GameEvent::PlayerChangedLevel {
                 player_id: self.actor,
                 old_level: game_state.world.current_level_id.saturating_sub(
-                    if self.direction == StairDirection::Down { 1 } else { 0 }
-                ) + if self.direction == StairDirection::Up { 1 } else { 0 },
+                    if self.direction == StairDirection::Down {
+                        1
+                    } else {
+                        0
+                    },
+                ) + if self.direction == StairDirection::Up {
+                    1
+                } else {
+                    0
+                },
                 new_level: game_state.world.current_level_id,
                 direction: self.direction.clone(),
             });
@@ -496,7 +504,9 @@ impl Action for UseStairsAction {
                 crate::GameCompletionState::CompletedDungeon => {
                     events.push(GameEvent::GameEnded {
                         ending_type: "victory".to_string(),
-                        message: "Congratulations! You've conquered the deepest depths of the dungeon!".to_string(),
+                        message:
+                            "Congratulations! You've conquered the deepest depths of the dungeon!"
+                                .to_string(),
                     });
                 }
                 _ => {}

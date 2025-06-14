@@ -36,25 +36,42 @@ pub use utils::*;
 
 // Explicit re-exports for commonly used types to ensure cross-platform compatibility
 pub use game::{
-    Direction, EntityId, Position, 
     // From actions
-    Action, ActionResult, ActionType, AttackAction, ConcreteAction, MoveAction, 
-    StairDirection, UseStairsAction, WaitAction,
-    // From entities  
-    ConcreteEntity, Entity, EntityStats, PlayerCharacter,
+    Action,
+    ActionResult,
+    ActionType,
+    AttackAction,
+    ConcreteAction,
+    // From entities
+    ConcreteEntity,
+    Direction,
+    Entity,
+    EntityId,
+    EntityStats,
     // From state
-    GameCompletionState, GameEvent, GameState, GameTimeInfo, MessageImportance,
+    GameCompletionState,
+    GameEvent,
+    GameState,
+    GameTimeInfo,
     // From world
-    Level, Tile, TileType, World,
+    Level,
+    MessageImportance,
+    MoveAction,
+    PlayerCharacter,
+    Position,
+    StairDirection,
+    Tile,
+    TileType,
+    UseStairsAction,
+    WaitAction,
+    World,
 };
 
 pub use generation::{
-    GenerationConfig, Generator, Room, RoomType, RoomCorridorGenerator, WorldGenerator,
+    GenerationConfig, Generator, Room, RoomCorridorGenerator, RoomType, WorldGenerator,
 };
 
-pub use rendering::{
-    MacroquadDisplay, UI,
-};
+pub use rendering::{MacroquadDisplay, UI};
 
 /// Core error type for the Thatch game engine.
 #[derive(thiserror::Error, Debug)]

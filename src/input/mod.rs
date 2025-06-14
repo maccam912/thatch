@@ -6,11 +6,11 @@ pub mod commands;
 
 pub use commands::*;
 
-use crate::{ThatchError, ThatchResult};
 use crate::game::{
-    ConcreteAction, Direction, Entity, GameState, MoveAction, Position, 
-    StairDirection, UseStairsAction, WaitAction,
+    ConcreteAction, Direction, Entity, GameState, MoveAction, Position, StairDirection,
+    UseStairsAction, WaitAction,
 };
+use crate::{ThatchError, ThatchResult};
 use macroquad::prelude::*;
 
 /// Input handler for processing player commands.
@@ -60,7 +60,7 @@ impl InputHandler {
         if let Some(input) = touch_input {
             return Some(input);
         }
-        
+
         // Fall back to keyboard input
         self.process_macroquad_input()
     }

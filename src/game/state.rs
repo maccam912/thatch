@@ -7,12 +7,12 @@
 //! for game operations and maintains consistency across all game components.
 
 use crate::{
-    ActionQueue, AutoexploreState, ConcreteEntity, Direction, Entity, EntityId, EntityStats, 
-    GameEvent, Level, MoveAction, PlayerCharacter, Position, StairDirection, ThatchError, 
+    ActionQueue, AutoexploreState, ConcreteEntity, Direction, Entity, EntityId, EntityStats,
+    GameEvent, Level, MoveAction, PlayerCharacter, Position, StairDirection, ThatchError,
     ThatchResult, TileType, UseStairsAction, World,
 };
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, BinaryHeap};
+use std::collections::{BinaryHeap, HashMap};
 use std::time::{Duration, Instant};
 
 /// Central game state containing all game data and systems.
@@ -245,10 +245,10 @@ impl GameState {
         let config = GenerationConfig::new(seed);
         let mut rng = StdRng::seed_from_u64(seed);
         let generator = RoomCorridorGenerator::new();
-        
+
         // Generate complete 3D dungeon
         let world = generator.generate_world(&config, &mut rng)?;
-        
+
         Ok(Self {
             world,
             entities: HashMap::new(),
@@ -695,7 +695,7 @@ impl GameState {
     /// Returns true if the level change was successful, false if it triggers a game ending.
     pub fn use_stairs(&mut self, direction: crate::StairDirection) -> ThatchResult<bool> {
         let current_level_id = self.world.current_level_id;
-        
+
         match direction {
             crate::StairDirection::Up => {
                 if current_level_id == 0 {
@@ -709,8 +709,8 @@ impl GameState {
                 }
             }
             crate::StairDirection::Down => {
-                if current_level_id >= 25 {
-                    // Going down from level 26 (0-indexed 25) triggers win ending
+                if current_level_id >= 26 {
+                    // Going down from level 27 (0-indexed 26) triggers win ending
                     self.completion_state = GameCompletionState::CompletedDungeon;
                     return Ok(false);
                 } else {
@@ -735,9 +735,10 @@ impl GameState {
                 self.generate_level(level_id)?;
             } else {
                 // New 3D system: all levels should already exist
-                return Err(ThatchError::InvalidState(
-                    format!("Level {} does not exist in pre-generated world", level_id)
-                ));
+                return Err(ThatchError::InvalidState(format!(
+                    "Level {} does not exist in pre-generated world",
+                    level_id
+                )));
             }
         }
 
@@ -755,21 +756,21 @@ impl GameState {
             if let Some(new_level) = self.world.current_level_mut() {
                 new_level.add_entity(player_id);
                 let spawn_pos = new_level.player_spawn; // This is now always stairs up
-                
+
                 // Update entity position
                 let old_pos = if let Some(player) = self.get_player() {
                     player.position()
                 } else {
                     spawn_pos // fallback
                 };
-                
+
                 self.remove_entity_from_position_index(player_id, old_pos);
                 if let Some(player) = self.get_player_mut() {
                     player.set_position(spawn_pos);
                 }
                 self.add_entity_to_position_index(player_id, spawn_pos);
             }
-            
+
             // CRITICAL: Update visibility immediately after level change
             // This ensures the player can see around them when entering a level
             if let Some(player_pos) = self.get_entity_position(player_id) {
@@ -781,7 +782,7 @@ impl GameState {
                 self.statistics.max_depth_reached = level_id;
                 self.statistics.levels_explored += 1;
             }
-            
+
             // Force an immediate visibility update to prevent "blank screen" bug
             if let Some(player_pos) = self.get_entity_position(player_id) {
                 let _ = self.update_player_visibility(player_pos);
@@ -793,29 +794,29 @@ impl GameState {
 
     /// Generates a new level with the specified ID.
     fn generate_level(&mut self, level_id: u32) -> ThatchResult<()> {
-        use crate::{GenerationConfig, RoomCorridorGenerator, Generator};
+        use crate::{GenerationConfig, Generator, RoomCorridorGenerator};
         use rand::{rngs::StdRng, SeedableRng};
 
         // Create level-specific seed based on world seed and level ID
         let level_seed = self.rng_seed.wrapping_add(level_id as u64 * 1000);
         let mut rng = StdRng::seed_from_u64(level_seed);
-        
+
         let config = GenerationConfig::default();
         let generator = RoomCorridorGenerator::new();
-        
+
         let mut level = generator.generate(&config, &mut rng)?;
         level.id = level_id;
-        
+
         // Set level name based on depth
         level.name = Some(format!("Dungeon Level {}", level_id + 1));
-        
+
         // Align stairs with previous level if possible
         self.align_stairs_with_previous_level(&mut level, level_id);
-        
+
         self.world.add_level(level);
         Ok(())
     }
-    
+
     /// Aligns stairs between levels for consistent navigation.
     fn align_stairs_with_previous_level(&self, level: &mut Level, level_id: u32) {
         // If going down from previous level, align stairs up with previous level's stairs down
@@ -825,21 +826,24 @@ impl GameState {
                     // Try to place stairs up at the same position as previous level's stairs down
                     if level.is_valid_position(prev_stairs_down) {
                         // Make sure the position is or can be made passable
-                        let _ = level.set_tile(prev_stairs_down, crate::Tile::new(crate::TileType::StairsUp));
+                        let _ = level.set_tile(
+                            prev_stairs_down,
+                            crate::Tile::new(crate::TileType::StairsUp),
+                        );
                         level.stairs_up_position = Some(prev_stairs_down);
                         level.player_spawn = prev_stairs_down;
-                        
+
                         // Ensure there's a clear area around the stairs
                         self.clear_area_around_stairs(level, prev_stairs_down);
                     }
                 }
             }
         }
-        
+
         // If going up to next level, try to align stairs down for future consistency
         // This is handled when the next level is generated
     }
-    
+
     /// Clears a small area around stairs to ensure accessibility.
     fn clear_area_around_stairs(&self, level: &mut Level, stairs_pos: Position) {
         // Clear a 3x3 area around stairs to ensure accessibility
@@ -848,9 +852,11 @@ impl GameState {
                 let clear_pos = Position::new(stairs_pos.x + dx, stairs_pos.y + dy);
                 if level.is_valid_position(clear_pos) && clear_pos != stairs_pos {
                     // Only clear if it's not a boundary wall
-                    if clear_pos.x > 0 && clear_pos.y > 0 && 
-                       clear_pos.x < (level.width as i32 - 1) && 
-                       clear_pos.y < (level.height as i32 - 1) {
+                    if clear_pos.x > 0
+                        && clear_pos.y > 0
+                        && clear_pos.x < (level.width as i32 - 1)
+                        && clear_pos.y < (level.height as i32 - 1)
+                    {
                         let _ = level.set_tile(clear_pos, crate::Tile::floor());
                     }
                 }
@@ -875,13 +881,13 @@ impl GameState {
             } else {
                 Position::new(0, 0)
             };
-            
+
             let old_pos = if let Some(player) = self.get_player() {
                 player.position()
             } else {
                 spawn_pos // fallback
             };
-            
+
             self.remove_entity_from_position_index(player_id, old_pos);
             if let Some(player) = self.get_player_mut() {
                 player.set_position(spawn_pos);
@@ -919,7 +925,8 @@ impl GameState {
             return Ok(None);
         }
 
-        let player = self.get_player()
+        let player = self
+            .get_player()
             .ok_or_else(|| ThatchError::InvalidState("No player found".to_string()))?;
         let player_pos = player.position();
         let player_id = player.id();
@@ -930,10 +937,9 @@ impl GameState {
                 if tile.tile_type == TileType::StairsDown {
                     // We're on stairs down, use them
                     self.autoexplore_state.mark_action_performed();
-                    return Ok(Some(crate::ConcreteAction::UseStairs(UseStairsAction::new(
-                        player_id,
-                        StairDirection::Down,
-                    ))));
+                    return Ok(Some(crate::ConcreteAction::UseStairs(
+                        UseStairsAction::new(player_id, StairDirection::Down),
+                    )));
                 }
             }
         }
@@ -959,7 +965,7 @@ impl GameState {
             if let Some(path) = self.autoexplore_find_path(player_pos, stairs_down_pos)? {
                 self.autoexplore_state.current_path = path;
                 self.autoexplore_state.target = Some(stairs_down_pos);
-                
+
                 // Return the first move in the path
                 if !self.autoexplore_state.current_path.is_empty() {
                     let next_pos = self.autoexplore_state.current_path.remove(0);
@@ -997,7 +1003,9 @@ impl GameState {
         start: Position,
         goal: Position,
     ) -> ThatchResult<Option<Vec<Position>>> {
-        let level = self.world.current_level()
+        let level = self
+            .world
+            .current_level()
             .ok_or_else(|| ThatchError::InvalidState("No current level".to_string()))?;
 
         // A* algorithm implementation
@@ -1020,12 +1028,12 @@ impl GameState {
                 // Reconstruct path
                 let mut path = Vec::new();
                 let mut current_pos = goal;
-                
+
                 while let Some(&prev) = came_from.get(&current_pos) {
                     path.push(current_pos);
                     current_pos = prev;
                 }
-                
+
                 path.reverse();
                 return Ok(Some(path));
             }
@@ -1221,116 +1229,132 @@ mod tests {
     fn test_3d_dungeon_initialization() {
         let seed = 12345;
         let game_state = GameState::new_with_complete_dungeon(seed).unwrap();
-        
+
         // Should have all 26 levels
         assert_eq!(game_state.world.levels.len(), 26);
-        
+
         // Should start on level 0
         assert_eq!(game_state.world.current_level_id, 0);
-        
+
         // Each level should be valid
         for level_id in 0..26 {
             let level = game_state.world.get_level(level_id).unwrap();
             assert_eq!(level.id, level_id);
-            
+
             // Should have passable tiles
-            let passable_count = level.tiles.iter()
+            let passable_count = level
+                .tiles
+                .iter()
                 .flat_map(|row| row.iter())
                 .filter(|tile| tile.tile_type.is_passable())
                 .count();
-            assert!(passable_count > 0, "Level {} should have passable tiles", level_id);
+            assert!(
+                passable_count > 0,
+                "Level {} should have passable tiles",
+                level_id
+            );
         }
     }
 
     #[test]
     fn test_stair_usage_level_transitions() {
-        use crate::{PlayerCharacter, ConcreteEntity, StairDirection};
-        
+        use crate::{ConcreteEntity, PlayerCharacter, StairDirection};
+
         let seed = 54321;
         let mut game_state = GameState::new_with_complete_dungeon(seed).unwrap();
-        
+
         // Create and add player
         let player_entity = ConcreteEntity::Player(PlayerCharacter::new("TestHero".to_string()));
         let player_id = player_entity.id();
         game_state.add_entity(player_entity).unwrap();
         game_state.set_player(player_id).unwrap();
-        
+
         // Start on level 0
         assert_eq!(game_state.world.current_level_id, 0);
-        
+
         // Use stairs down to go to level 1
         let level_changed = game_state.use_stairs(StairDirection::Down).unwrap();
         assert!(level_changed, "Should successfully change levels");
         assert_eq!(game_state.world.current_level_id, 1);
-        
+
         // Use stairs up to go back to level 0
         let level_changed = game_state.use_stairs(StairDirection::Up).unwrap();
         assert!(level_changed, "Should successfully change levels");
         assert_eq!(game_state.world.current_level_id, 0);
-        
+
         // Try to go up from level 0 (should trigger escape ending)
         let level_changed = game_state.use_stairs(StairDirection::Up).unwrap();
         assert!(!level_changed, "Should not change levels - game should end");
-        assert_eq!(game_state.completion_state, crate::GameCompletionState::EscapedEarly);
+        assert_eq!(
+            game_state.completion_state,
+            crate::GameCompletionState::EscapedEarly
+        );
     }
 
     #[test]
     fn test_stair_usage_boundary_conditions() {
-        use crate::{PlayerCharacter, ConcreteEntity, StairDirection};
-        
+        use crate::{ConcreteEntity, PlayerCharacter, StairDirection};
+
         let seed = 98765;
         let mut game_state = GameState::new_with_complete_dungeon(seed).unwrap();
-        
+
         // Create and add player
         let player_entity = ConcreteEntity::Player(PlayerCharacter::new("TestHero".to_string()));
         let player_id = player_entity.id();
         game_state.add_entity(player_entity).unwrap();
         game_state.set_player(player_id).unwrap();
-        
+
         // Go to level 25
         game_state.world.change_level(25).unwrap();
         assert_eq!(game_state.world.current_level_id, 25);
-        
+
         // Try to go down from level 25 (should trigger win ending)
         let level_changed = game_state.use_stairs(StairDirection::Down).unwrap();
         assert!(!level_changed, "Should not change levels - game should end");
-        assert_eq!(game_state.completion_state, crate::GameCompletionState::CompletedDungeon);
+        assert_eq!(
+            game_state.completion_state,
+            crate::GameCompletionState::CompletedDungeon
+        );
     }
 
     #[test]
     fn test_change_to_level_3d_vs_single() {
-        use crate::{PlayerCharacter, ConcreteEntity};
-        
+        use crate::{ConcreteEntity, PlayerCharacter};
+
         // Test 3D system (should have all levels pre-generated)
         let seed = 11111;
         let mut game_state_3d = GameState::new_with_complete_dungeon(seed).unwrap();
-        
+
         let player_entity = ConcreteEntity::Player(PlayerCharacter::new("TestHero".to_string()));
         let player_id = player_entity.id();
         game_state_3d.add_entity(player_entity).unwrap();
         game_state_3d.set_player(player_id).unwrap();
-        
+
         // Should be able to change to any level 0-25
         for level_id in 0..26 {
             let result = game_state_3d.change_to_level(level_id);
-            assert!(result.is_ok(), "Should be able to change to level {} in 3D system", level_id);
+            assert!(
+                result.is_ok(),
+                "Should be able to change to level {} in 3D system",
+                level_id
+            );
             assert_eq!(game_state_3d.world.current_level_id, level_id);
         }
-        
+
         // Should fail for invalid levels
         assert!(game_state_3d.change_to_level(26).is_err());
         assert!(game_state_3d.change_to_level(100).is_err());
-        
+
         // Test single level system (should generate on demand)
         let mut game_state_single = GameState::new(seed);
         let player_entity_2 = ConcreteEntity::Player(PlayerCharacter::new("TestHero2".to_string()));
         let player_id_2 = player_entity_2.id();
         game_state_single.add_entity(player_entity_2).unwrap();
         game_state_single.set_player(player_id_2).unwrap();
-        
+
         // Should start with 1 level
         assert_eq!(game_state_single.world.levels.len(), 1);
-        
+
         // Should generate level 1 on demand
         let result = game_state_single.change_to_level(1);
         assert!(result.is_ok(), "Should generate level 1 on demand");
@@ -1339,29 +1363,31 @@ mod tests {
 
     #[test]
     fn test_player_position_after_level_change() {
-        use crate::{PlayerCharacter, ConcreteEntity, Position};
-        
+        use crate::{ConcreteEntity, PlayerCharacter, Position};
+
         let seed = 22222;
         let mut game_state = GameState::new_with_complete_dungeon(seed).unwrap();
-        
+
         // Create and add player
         let player_entity = ConcreteEntity::Player(PlayerCharacter::new("TestHero".to_string()));
         let player_id = player_entity.id();
         game_state.add_entity(player_entity).unwrap();
         game_state.set_player(player_id).unwrap();
-        
+
         // Set initial position
         let initial_pos = Position::new(10, 10);
-        game_state.set_entity_position(player_id, initial_pos).unwrap();
-        
+        game_state
+            .set_entity_position(player_id, initial_pos)
+            .unwrap();
+
         // Change to level 1
         game_state.change_to_level(1).unwrap();
-        
+
         // Player should now be at spawn position of level 1 (stairs up)
         let new_pos = game_state.get_entity_position(player_id).unwrap();
         let level_1 = game_state.world.current_level().unwrap();
         assert_eq!(new_pos, level_1.player_spawn);
-        
+
         // Player should be in the entities list of level 1
         assert!(level_1.entities.contains(&player_id));
     }

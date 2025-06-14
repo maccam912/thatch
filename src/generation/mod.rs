@@ -14,8 +14,8 @@ pub use dungeon::*;
 pub use encounters::*;
 pub use items::*;
 
-use crate::{ThatchError, ThatchResult};
 use crate::game::{Level, Position, TileType};
+use crate::{ThatchError, ThatchResult};
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 use serde::{Deserialize, Serialize};
