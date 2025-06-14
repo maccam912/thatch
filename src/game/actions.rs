@@ -141,6 +141,7 @@ pub struct ActionResult {
 
 impl ActionResult {
     /// Creates a successful action result.
+    #[must_use]
     pub fn success(events: Vec<GameEvent>, time_cost: u32) -> Self {
         Self {
             success: true,
@@ -152,6 +153,7 @@ impl ActionResult {
     }
 
     /// Creates a failed action result.
+    #[must_use]
     pub fn failure(error: String, time_cost: u32) -> Self {
         Self {
             success: false,
@@ -163,6 +165,7 @@ impl ActionResult {
     }
 
     /// Adds result data.
+    #[must_use]
     pub fn with_data(mut self, key: String, value: String) -> Self {
         self.result_data.insert(key, value);
         self
@@ -179,6 +182,7 @@ pub struct MoveAction {
 
 impl MoveAction {
     /// Creates a new movement action.
+    #[must_use]
     pub fn new(actor: EntityId, direction: Direction) -> Self {
         Self {
             actor,
@@ -479,16 +483,8 @@ impl Action for UseStairsAction {
             events.push(GameEvent::PlayerChangedLevel {
                 player_id: self.actor,
                 old_level: game_state.world.current_level_id.saturating_sub(
-                    if self.direction == StairDirection::Down {
-                        1
-                    } else {
-                        0
-                    },
-                ) + if self.direction == StairDirection::Up {
-                    1
-                } else {
-                    0
-                },
+                    u32::from(self.direction == StairDirection::Down),
+                ) + u32::from(self.direction == StairDirection::Up),
                 new_level: game_state.world.current_level_id,
                 direction: self.direction.clone(),
             });
@@ -576,30 +572,32 @@ impl ConcreteAction {
         game_state: &mut crate::GameState,
     ) -> crate::ThatchResult<Vec<crate::GameEvent>> {
         match self {
-            ConcreteAction::Move(action) => action.execute(game_state),
-            ConcreteAction::Attack(action) => action.execute(game_state),
-            ConcreteAction::Wait(action) => action.execute(game_state),
-            ConcreteAction::UseStairs(action) => action.execute(game_state),
+            Self::Move(action) => action.execute(game_state),
+            Self::Attack(action) => action.execute(game_state),
+            Self::Wait(action) => action.execute(game_state),
+            Self::UseStairs(action) => action.execute(game_state),
         }
     }
 
     /// Gets the action type.
+    #[must_use]
     pub fn action_type(&self) -> ActionType {
         match self {
-            ConcreteAction::Move(action) => action.action_type(),
-            ConcreteAction::Attack(action) => action.action_type(),
-            ConcreteAction::Wait(action) => action.action_type(),
-            ConcreteAction::UseStairs(action) => action.action_type(),
+            Self::Move(action) => action.action_type(),
+            Self::Attack(action) => action.action_type(),
+            Self::Wait(action) => action.action_type(),
+            Self::UseStairs(action) => action.action_type(),
         }
     }
 
     /// Gets the entity ID that performs this action.
+    #[must_use]
     pub fn actor(&self) -> EntityId {
         match self {
-            ConcreteAction::Move(action) => action.actor(),
-            ConcreteAction::Attack(action) => action.actor(),
-            ConcreteAction::Wait(action) => action.actor(),
-            ConcreteAction::UseStairs(action) => action.actor(),
+            Self::Move(action) => action.actor(),
+            Self::Attack(action) => action.actor(),
+            Self::Wait(action) => action.actor(),
+            Self::UseStairs(action) => action.actor(),
         }
     }
 }
@@ -619,7 +617,8 @@ pub struct ActionQueue {
 
 impl ActionQueue {
     /// Creates a new action queue.
-    pub fn new() -> Self {
+    #[must_use]
+    pub const fn new() -> Self {
         Self {
             pending_actions: Vec::new(),
             processing_actions: Vec::new(),
@@ -649,7 +648,8 @@ impl ActionQueue {
     }
 
     /// Gets the number of pending actions.
-    pub fn pending_count(&self) -> usize {
+    #[must_use]
+    pub const fn pending_count(&self) -> usize {
         self.pending_actions.len()
     }
 

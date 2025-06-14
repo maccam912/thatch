@@ -712,22 +712,20 @@ impl GameState {
                     // Going up from level 1 triggers escape ending
                     self.completion_state = GameCompletionState::EscapedEarly;
                     return Ok(false);
-                } else {
-                    // Go back to previous level
-                    let target_level_id = current_level_id - 1;
-                    self.change_to_level(target_level_id)?;
                 }
+                // Go back to previous level
+                let target_level_id = current_level_id - 1;
+                self.change_to_level(target_level_id)?;
             }
             crate::StairDirection::Down => {
                 if current_level_id >= 25 {
                     // Going down from level 26 (0-indexed 25) triggers win ending
                     self.completion_state = GameCompletionState::CompletedDungeon;
                     return Ok(false);
-                } else {
-                    // Go to next level (generate if needed)
-                    let target_level_id = current_level_id + 1;
-                    self.change_to_level(target_level_id)?;
                 }
+                // Go to next level (generate if needed)
+                let target_level_id = current_level_id + 1;
+                self.change_to_level(target_level_id)?;
             }
         }
 
@@ -964,10 +962,9 @@ impl GameState {
                     direction,
                     metadata: HashMap::new(),
                 })));
-            } else {
-                // Path is invalid, clear it
-                self.autoexplore_state.current_path.clear();
             }
+            // Path is invalid, clear it
+            self.autoexplore_state.current_path.clear();
         }
 
         // We need a new path - find stairs down

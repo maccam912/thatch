@@ -389,7 +389,6 @@ impl RoomCorridorGenerator {
             if self.all_rooms_connected(level, rooms)? {
                 // Wall placement is valid, keep it
                 walls_placed += 1;
-                continue;
             } else {
                 // Wall breaks connectivity, remove it and count as failure
                 level.set_tile(pos, original_tile)?;
@@ -522,7 +521,6 @@ impl RoomCorridorGenerator {
                     match tile.tile_type {
                         TileType::StairsUp | TileType::StairsDown => {
                             // Keep stairs as they are
-                            continue;
                         }
                         _ => {
                             // If it's a passable tile but not reachable, convert to wall
@@ -782,7 +780,6 @@ impl RoomCorridorGenerator {
                     match tile.tile_type {
                         TileType::StairsUp | TileType::StairsDown => {
                             // Leave stairs as they are
-                            continue;
                         }
                         _ => {
                             // Clear everything else to floor

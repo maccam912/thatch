@@ -530,29 +530,10 @@ impl Entity for PlayerCharacter {
     }
 }
 
-/// Container for managing all entities in the game.
-///
-/// Provides efficient access to entities by ID and type, and handles
-/// entity lifecycle management.
-///
-/// NOTE: Temporarily commented out due to trait object serialization issues.
-/// The GameState uses ConcreteEntity enum instead.
-/*
-#[derive(Clone, Serialize, Deserialize)]
-pub struct EntityManager {
-    /// All entities indexed by their ID
-    entities: HashMap<EntityId, Box<dyn Entity>>,
-    /// Player entity ID for quick access
-    player_id: Option<EntityId>,
-    /// Entities by position for spatial queries
-    position_index: HashMap<Position, Vec<EntityId>>,
-}
-*/
-// Note: Due to Rust's object safety limitations, we'll need to implement
-// a custom serialization strategy for trait objects. For now, we'll use
-// an enum-based approach for concrete entity types.
-
 /// Concrete entity types for serialization.
+///
+/// This enum replaces the trait object approach due to Rust's serialization
+/// limitations with trait objects. Each variant represents a concrete entity type.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ConcreteEntity {
     Player(PlayerCharacter),

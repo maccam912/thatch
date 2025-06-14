@@ -26,7 +26,8 @@ pub struct AutoexploreState {
 
 impl AutoexploreState {
     /// Creates a new autoexplore state.
-    pub fn new() -> Self {
+    #[must_use]
+    pub const fn new() -> Self {
         Self {
             enabled: false,
             current_path: Vec::new(),
@@ -49,12 +50,11 @@ impl AutoexploreState {
     }
 
     /// Checks if enough time has passed for the next action.
+    #[must_use]
     pub fn can_perform_action(&self) -> bool {
-        if let Some(last_time) = self.last_action_time {
-            last_time.elapsed().as_millis() >= self.action_delay_ms as u128
-        } else {
-            true // First action
-        }
+        self.last_action_time.map_or(true, |last_time| {
+            last_time.elapsed().as_millis() >= u128::from(self.action_delay_ms)
+        })
     }
 
     /// Updates the last action time.
@@ -96,13 +96,12 @@ impl AutoexploreState {
                             player_id,
                             StairDirection::Down,
                         ))));
-                    } else {
-                        // Can't go down further, disable autoexplore
-                        self.enabled = false;
-                        return Err(ThatchError::InvalidState(
-                            "Reached bottom of dungeon, disabling autoexplore".to_string(),
-                        ));
                     }
+                    // Can't go down further, disable autoexplore
+                    self.enabled = false;
+                    return Err(ThatchError::InvalidState(
+                        "Reached bottom of dungeon, disabling autoexplore".to_string(),
+                    ));
                 }
             }
         }
@@ -117,10 +116,9 @@ impl AutoexploreState {
                     direction,
                     metadata: HashMap::new(),
                 })));
-            } else {
-                // Path is invalid, clear it
-                self.current_path.clear();
             }
+            // Path is invalid, clear it
+            self.current_path.clear();
         }
 
         // We need a new path - find stairs down
