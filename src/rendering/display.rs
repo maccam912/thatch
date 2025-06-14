@@ -56,24 +56,15 @@ impl MacroquadDisplay {
     /// // Display is ready for rendering
     /// ```
     pub async fn new() -> ThatchResult<Self> {
-        let screen_width = screen_width();
-        let screen_height = screen_height();
-
-        // Tile size and layout calculations
-        let tile_size = 24.0;
-        let ui_panel_width = 300.0;
-        let map_width = ((screen_width - ui_panel_width) / tile_size) as i32;
-        let map_height = ((screen_height - 100.0) / tile_size) as i32; // Leave space for messages
-
         let mut display = Self {
-            screen_width,
-            screen_height,
-            tile_size,
+            screen_width: 0.0,
+            screen_height: 0.0,
+            tile_size: 0.0,
             viewport_x: 0,
             viewport_y: 0,
-            map_width,
-            map_height,
-            ui_panel_width,
+            map_width: 0,
+            map_height: 0,
+            ui_panel_width: 0.0,
             messages: Vec::new(),
             max_messages: 100,
             last_player_pos: None,
@@ -82,8 +73,58 @@ impl MacroquadDisplay {
             ui: UI::new(),
         };
 
+        display.update_layout_dimensions();
         display.initialize_graphics().await?;
         Ok(display)
+    }
+
+    /// Draws text that wraps within a specified width.
+    fn draw_wrapped_text(&self, text: &str, x: f32, y: f32, font_size: f32, color: Color, _max_width: f32) {
+        // For now, just draw the text normally (word wrapping is complex)
+        // In a real implementation, you'd break text into lines
+        draw_text(text, x, y, font_size, color);
+    }
+
+    /// Updates layout dimensions based on current screen size for responsive design.
+    pub fn update_layout_dimensions(&mut self) {
+        let current_width = screen_width();
+        let current_height = screen_height();
+
+        // Only update if screen size changed or first time
+        if (current_width - self.screen_width).abs() > 1.0 || (current_height - self.screen_height).abs() > 1.0 {
+            self.screen_width = current_width;
+            self.screen_height = current_height;
+
+            // Responsive calculations
+            self.calculate_responsive_layout();
+        }
+    }
+
+    /// Calculates responsive layout dimensions based on screen size.
+    fn calculate_responsive_layout(&mut self) {
+        // Responsive tile size based on screen resolution
+        let base_tile_size = 24.0;
+        let scale_factor = (self.screen_width / 1024.0).max(0.5).min(2.0); // Scale between 0.5x and 2x
+        self.tile_size = base_tile_size * scale_factor;
+
+        // Responsive UI panel width (15-25% of screen width)
+        let panel_ratio = if self.screen_width < 800.0 { 0.15 } else if self.screen_width > 1600.0 { 0.20 } else { 0.18 };
+        self.ui_panel_width = (self.screen_width * panel_ratio).max(250.0).min(400.0);
+
+        // Message area height (8-12% of screen height)
+        let message_ratio = if self.screen_height < 600.0 { 0.08 } else { 0.10 };
+        let message_area_height = (self.screen_height * message_ratio).max(60.0).min(120.0);
+
+        // Calculate map dimensions
+        let available_map_width = self.screen_width - self.ui_panel_width;
+        let available_map_height = self.screen_height - message_area_height;
+
+        self.map_width = (available_map_width / self.tile_size) as i32;
+        self.map_height = (available_map_height / self.tile_size) as i32;
+
+        // Ensure minimum map size
+        self.map_width = self.map_width.max(20);
+        self.map_height = self.map_height.max(15);
     }
 
     /// Initializes graphics resources.
@@ -119,6 +160,9 @@ impl MacroquadDisplay {
     ///
     /// This includes the map, UI panels, message area, and touch controls.
     pub async fn render_game(&mut self, game_state: &GameState) -> ThatchResult<()> {
+        // Update layout dimensions for responsive design
+        self.update_layout_dimensions();
+
         // Check if we need to update viewport
         let current_player_pos = game_state.get_player().map(|p| p.position());
         if current_player_pos != self.last_player_pos {
@@ -286,78 +330,100 @@ impl MacroquadDisplay {
     /// Renders the UI panel.
     fn render_ui(&self, game_state: &GameState) -> ThatchResult<()> {
         let panel_x = self.map_width as f32 * self.tile_size + 10.0;
+        let panel_width = self.ui_panel_width - 20.0; // Leave margins
         let mut line_y = 20.0;
-        let line_height = 20.0;
+        
+        // Responsive font sizes and spacing
+        let scale_factor = (self.screen_width / 1024.0).max(0.7).min(1.3);
+        let title_font_size = 24.0 * scale_factor;
+        let normal_font_size = 16.0 * scale_factor;
+        let line_height = 18.0 * scale_factor;
+
+        // Render panel background
+        draw_rectangle(
+            panel_x - 5.0,
+            0.0,
+            self.ui_panel_width,
+            self.screen_height,
+            Color::new(0.1, 0.1, 0.1, 0.8),
+        );
 
         // Render title
-        draw_text("THATCH ROGUELIKE", panel_x, line_y, 24.0, WHITE);
+        draw_text("THATCH ROGUELIKE", panel_x, line_y, title_font_size, WHITE);
         line_y += line_height * 2.0;
 
         // Render player stats if available
         if let Some(player) = game_state.get_player() {
-            draw_text(
+            self.draw_wrapped_text(
                 &format!("Player: {}", player.name),
                 panel_x,
                 line_y,
-                18.0,
+                normal_font_size,
                 YELLOW,
+                panel_width,
             );
             line_y += line_height;
 
-            draw_text(
+            self.draw_wrapped_text(
                 &format!(
                     "Health: {}/{}",
                     player.stats.health, player.stats.max_health
                 ),
                 panel_x,
                 line_y,
-                18.0,
+                normal_font_size,
                 WHITE,
+                panel_width,
             );
             line_y += line_height;
 
-            draw_text(
+            self.draw_wrapped_text(
                 &format!("Mana: {}/{}", player.stats.mana, player.stats.max_mana),
                 panel_x,
                 line_y,
-                18.0,
+                normal_font_size,
                 WHITE,
+                panel_width,
             );
             line_y += line_height;
 
-            draw_text(
+            self.draw_wrapped_text(
                 &format!("Dungeon Level: {}", game_state.world.current_level_id + 1),
                 panel_x,
                 line_y,
-                18.0,
+                normal_font_size,
                 WHITE,
+                panel_width,
             );
             line_y += line_height;
 
-            draw_text(
+            self.draw_wrapped_text(
                 &format!("Character Level: {}", player.stats.level),
                 panel_x,
                 line_y,
-                18.0,
+                normal_font_size,
                 WHITE,
+                panel_width,
             );
             line_y += line_height;
 
-            draw_text(
+            self.draw_wrapped_text(
                 &format!("XP: {}", player.stats.experience),
                 panel_x,
                 line_y,
-                18.0,
+                normal_font_size,
                 WHITE,
+                panel_width,
             );
             line_y += line_height * 2.0;
 
-            draw_text(
+            self.draw_wrapped_text(
                 &format!("Position: ({}, {})", player.position.x, player.position.y),
                 panel_x,
                 line_y,
-                18.0,
+                normal_font_size,
                 WHITE,
+                panel_width,
             );
             line_y += line_height;
 
@@ -386,12 +452,13 @@ impl MacroquadDisplay {
                         _ => WHITE,
                     };
 
-                    draw_text(
+                    self.draw_wrapped_text(
                         &format!("Standing on: {}", tile_name),
                         panel_x,
                         line_y,
-                        18.0,
+                        normal_font_size,
                         tile_color,
+                        panel_width,
                     );
                 }
             }
@@ -400,29 +467,31 @@ impl MacroquadDisplay {
 
         // Render game info
         let time_info = game_state.get_game_time_info();
-        draw_text("Game Info:", panel_x, line_y, 18.0, SKYBLUE);
+        self.draw_wrapped_text("Game Info:", panel_x, line_y, normal_font_size, SKYBLUE, panel_width);
         line_y += line_height;
 
-        draw_text(
+        self.draw_wrapped_text(
             &format!("Turn: {}", time_info.turn_number),
             panel_x,
             line_y,
-            18.0,
+            normal_font_size,
             WHITE,
+            panel_width,
         );
         line_y += line_height;
 
-        draw_text(
+        self.draw_wrapped_text(
             &format!("Time: {}s", time_info.elapsed_time.as_secs()),
             panel_x,
             line_y,
-            18.0,
+            normal_font_size,
             WHITE,
+            panel_width,
         );
         line_y += line_height * 2.0;
 
         // Render controls
-        draw_text("Controls:", panel_x, line_y, 18.0, GREEN);
+        self.draw_wrapped_text("Controls:", panel_x, line_y, normal_font_size, GREEN, panel_width);
         line_y += line_height;
 
         // Always available controls
@@ -434,7 +503,7 @@ impl MacroquadDisplay {
         ];
 
         for control in &basic_controls {
-            draw_text(control, panel_x, line_y, 16.0, WHITE);
+            self.draw_wrapped_text(control, panel_x, line_y, normal_font_size, WHITE, panel_width);
             line_y += line_height;
         }
 
@@ -444,18 +513,18 @@ impl MacroquadDisplay {
                 if let Some(tile) = level.get_tile(player.position()) {
                     match tile.tile_type {
                         TileType::StairsUp => {
-                            draw_text("1: Go up stairs (<)", panel_x, line_y, 16.0, WHITE);
+                            self.draw_wrapped_text("1: Go up stairs (<)", panel_x, line_y, normal_font_size, WHITE, panel_width);
                             line_y += line_height;
                         }
                         TileType::StairsDown => {
-                            draw_text("2: Go down stairs (>)", panel_x, line_y, 16.0, WHITE);
+                            self.draw_wrapped_text("2: Go down stairs (>)", panel_x, line_y, normal_font_size, WHITE, panel_width);
                             line_y += line_height;
                         }
                         _ => {
                             // Show greyed out stair options when not on stairs
-                            draw_text("1: Go up stairs (<)", panel_x, line_y, 16.0, GRAY);
+                            self.draw_wrapped_text("1: Go up stairs (<)", panel_x, line_y, normal_font_size, GRAY, panel_width);
                             line_y += line_height;
-                            draw_text("2: Go down stairs (>)", panel_x, line_y, 16.0, GRAY);
+                            self.draw_wrapped_text("2: Go down stairs (>)", panel_x, line_y, normal_font_size, GRAY, panel_width);
                             line_y += line_height;
                         }
                     }
@@ -468,16 +537,21 @@ impl MacroquadDisplay {
 
     /// Renders the message area.
     fn render_messages(&self) -> ThatchResult<()> {
-        let message_area_y = self.screen_height - 80.0;
+        // Responsive font sizes and spacing
+        let scale_factor = (self.screen_width / 1024.0).max(0.7).min(1.3);
+        let normal_font_size = 16.0 * scale_factor;
+        let line_height = 18.0 * scale_factor;
+        
+        let message_area_height = 80.0 * scale_factor;
+        let message_area_y = self.screen_height - message_area_height;
         let message_count = 3; // Show last 3 messages
-        let line_height = 18.0;
 
         // Draw background for message area
         draw_rectangle(
             0.0,
             message_area_y - 10.0,
             self.screen_width,
-            90.0,
+            message_area_height + 10.0,
             Color::new(0.0, 0.0, 0.0, 0.8),
         );
 
@@ -490,7 +564,7 @@ impl MacroquadDisplay {
 
         for (i, message) in self.messages.iter().skip(start_index).enumerate() {
             let y = message_area_y + i as f32 * line_height;
-            draw_text(message, 10.0, y, 16.0, WHITE);
+            draw_text(message, 10.0, y, normal_font_size, WHITE);
         }
 
         Ok(())

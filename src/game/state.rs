@@ -719,8 +719,8 @@ impl GameState {
                 }
             }
             crate::StairDirection::Down => {
-                if current_level_id >= 26 {
-                    // Going down from level 27 (0-indexed 26) triggers win ending
+                if current_level_id >= 25 {
+                    // Going down from level 26 (0-indexed 25) triggers win ending
                     self.completion_state = GameCompletionState::CompletedDungeon;
                     return Ok(false);
                 } else {

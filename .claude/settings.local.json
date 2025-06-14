@@ -22,7 +22,8 @@
       "Bash(jarsigner:*)",
       "Bash(zipinfo:*)",
       "Bash(./build_android.sh:*)",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "Bash(git config:*)"
     ],
     "deny": []
   }
