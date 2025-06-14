@@ -135,6 +135,9 @@ impl MacroquadDisplay {
         self.render_map(game_state)?;
         self.render_ui(game_state)?;
         self.render_messages()?;
+        
+        // Always render touch controls for all platforms
+        self.ui.render_touch_controls();
 
         Ok(())
     }
@@ -203,7 +206,7 @@ impl MacroquadDisplay {
 
                 if let Some(texture) = self.tile_textures.get(&character) {
                     draw_texture_ex(
-                        texture,
+                        *texture,
                         screen_x,
                         screen_y,
                         color,
@@ -227,7 +230,7 @@ impl MacroquadDisplay {
 
         if let Some(texture) = self.tile_textures.get(&character) {
             draw_texture_ex(
-                texture,
+                *texture,
                 screen_x,
                 screen_y,
                 color,
@@ -291,7 +294,10 @@ impl MacroquadDisplay {
             );
             line_y += line_height;
 
-            draw_text(&format!("Level: {}", player.stats.level), panel_x, line_y, 18.0, WHITE);
+            draw_text(&format!("Dungeon Level: {}", game_state.world.current_level_id + 1), panel_x, line_y, 18.0, WHITE);
+            line_y += line_height;
+            
+            draw_text(&format!("Character Level: {}", player.stats.level), panel_x, line_y, 18.0, WHITE);
             line_y += line_height;
 
             draw_text(&format!("XP: {}", player.stats.experience), panel_x, line_y, 18.0, WHITE);

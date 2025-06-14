@@ -7,16 +7,16 @@ description = "A deep, complex roguelike with LLM-driven dungeon mastering"
 license = "MIT"
 
 [dependencies]
-macroquad = { version = "0.4" }
+macroquad = { version = "0.3" }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 tokio = { version = "1.0", features = ["full"] }
 thiserror = "1.0"
 log = "0.4"
-env_logger = "0.11"
+env_logger = "0.10"
 rand = "0.8"
 uuid = { version = "1.0", features = ["v4", "serde"] }
-clap = { version = "4.0", features = ["derive"] }
+clap = { version = "3.0", features = ["derive"] }
 noise = "0.9"
 pathfinding = "4.0"
 
@@ -62,22 +62,17 @@ opt-level = 2
 # Android configuration
 [package.metadata.android]
 assets = "assets/"
-icon = "@mipmap/ic_launcher"
+res = "android-res/"
 build_targets = [
     "armv7-linux-androideabi", 
-    "aarch64-linux-android", 
-    "i686-linux-android", 
-    "x86_64-linux-android"
+    "aarch64-linux-android"
 ]
 version_code = 1
 version_name = "0.1.0"
 
 [package.metadata.android.activity_attributes]
 "android:exported" = "true"
-"android:screenOrientation" = "userLandscape"
-
-[package.metadata.android.application]
-theme = "@android:style/Theme.DeviceDefault.NoActionBar.Fullscreen"
+"android:screenOrientation" = "landscape"
 
 # Benchmarks will be added later
 # [[bench]]

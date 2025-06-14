@@ -1,28 +1,36 @@
 #!/bin/bash
 
 # Android APK Build Script for Thatch Roguelike
-# This script builds the Android APK using Docker
+# This script builds the Android APK using Docker or Podman
 
 set -e
 
 echo "Building Thatch Roguelike for Android..."
 
-# Check if Docker is running
-if ! docker info > /dev/null 2>&1; then
-    echo "Error: Docker is not running. Please start Docker and try again."
+# Detect container runtime (Docker or Podman)
+CONTAINER_CMD=""
+if command -v podman > /dev/null 2>&1 && podman info > /dev/null 2>&1; then
+    CONTAINER_CMD="podman"
+    echo "Using Podman as container runtime"
+elif command -v docker > /dev/null 2>&1 && docker info > /dev/null 2>&1; then
+    CONTAINER_CMD="docker"
+    echo "Using Docker as container runtime"
+else
+    echo "Error: Neither Docker nor Podman is available or running."
+    echo "Please install and start either Docker or Podman and try again."
     exit 1
 fi
 
-# Pull the latest cargo-apk Docker image
-echo "Pulling cargo-apk Docker image..."
-docker pull notfl3/cargo-apk
+# Pull the latest cargo-apk container image
+echo "Pulling cargo-apk container image..."
+$CONTAINER_CMD pull docker.io/notfl3/cargo-apk
 
 # Create APK directory if it doesn't exist
 mkdir -p target/android-artifacts/release/apk
 
-# Build the APK using Docker
+# Build the APK using container runtime
 echo "Building APK (this may take a while)..."
-docker run --rm -v $(pwd):/root/src -w /root/src notfl3/cargo-apk cargo quad-apk build --release
+$CONTAINER_CMD run --rm -v $(pwd):/root/src -w /root/src docker.io/notfl3/cargo-apk cargo quad-apk build --release
 
 # Check if APK was created
 APK_PATH="target/android-artifacts/release/apk/thatch.apk"

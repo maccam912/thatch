@@ -35,7 +35,7 @@ use uuid::Uuid;
 /// assert_eq!(pos.y, 5);
 ///
 /// let adjacent = pos.adjacent_positions();
-/// assert_eq!(adjacent.len(), 8); // All 8 surrounding positions
+/// assert_eq!(adjacent.len(), 4); // All 4 cardinal directions
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Position {
@@ -76,18 +76,10 @@ impl Position {
         (dx * dx + dy * dy).sqrt()
     }
 
-    /// Returns all 8 adjacent positions (including diagonals).
+    /// Returns only the 4 cardinal adjacent positions (no diagonals).
+    /// This is now the default adjacent positions method.
     pub fn adjacent_positions(self) -> Vec<Position> {
-        vec![
-            Position::new(self.x - 1, self.y - 1), // NW
-            Position::new(self.x, self.y - 1),     // N
-            Position::new(self.x + 1, self.y - 1), // NE
-            Position::new(self.x - 1, self.y),     // W
-            Position::new(self.x + 1, self.y),     // E
-            Position::new(self.x - 1, self.y + 1), // SW
-            Position::new(self.x, self.y + 1),     // S
-            Position::new(self.x + 1, self.y + 1), // SE
-        ]
+        self.cardinal_adjacent_positions()
     }
 
     /// Returns only the 4 cardinal adjacent positions (no diagonals).
@@ -117,17 +109,13 @@ impl std::ops::Sub for Position {
     }
 }
 
-/// Directions for movement and orientation.
+/// Directions for movement and orientation (cardinal only).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Direction {
     North,
     South,
     East,
     West,
-    Northeast,
-    Northwest,
-    Southeast,
-    Southwest,
 }
 
 impl Direction {
@@ -147,10 +135,6 @@ impl Direction {
             Direction::South => Position::new(0, 1),
             Direction::East => Position::new(1, 0),
             Direction::West => Position::new(-1, 0),
-            Direction::Northeast => Position::new(1, -1),
-            Direction::Northwest => Position::new(-1, -1),
-            Direction::Southeast => Position::new(1, 1),
-            Direction::Southwest => Position::new(-1, 1),
         }
     }
 
@@ -163,25 +147,17 @@ impl Direction {
             (0, 1) => Some(Direction::South),
             (1, 0) => Some(Direction::East),
             (-1, 0) => Some(Direction::West),
-            (1, -1) => Some(Direction::Northeast),
-            (-1, -1) => Some(Direction::Northwest),
-            (1, 1) => Some(Direction::Southeast),
-            (-1, 1) => Some(Direction::Southwest),
-            _ => None,
+            _ => None, // No diagonal movement allowed
         }
     }
 
-    /// Returns all 8 directions.
+    /// Returns all 4 cardinal directions.
     pub fn all() -> Vec<Direction> {
         vec![
             Direction::North,
             Direction::South,
             Direction::East,
             Direction::West,
-            Direction::Northeast,
-            Direction::Northwest,
-            Direction::Southeast,
-            Direction::Southwest,
         ]
     }
 
@@ -260,7 +236,7 @@ mod tests {
     fn test_direction_to_delta() {
         assert_eq!(Direction::North.to_delta(), Position::new(0, -1));
         assert_eq!(Direction::East.to_delta(), Position::new(1, 0));
-        assert_eq!(Direction::Northeast.to_delta(), Position::new(1, -1));
+        assert_eq!(Direction::North.to_delta(), Position::new(0, -1));
     }
 
     #[test]

@@ -5,8 +5,7 @@
 use clap::Parser;
 use macroquad::prelude::*;
 use thatch::{
-    Entity, GameState, GenerationConfig, Generator, PlayerCharacter, RoomCorridorGenerator,
-    ThatchError, ThatchResult,
+    Entity, GameState, PlayerCharacter, ThatchError, ThatchResult,
 };
 #[cfg(feature = "dev-tools")]
 use tracing::{error, info, Level};
@@ -25,28 +24,28 @@ macro_rules! error {
 
 /// Command line arguments for the Thatch roguelike.
 #[derive(Parser, Debug)]
-#[command(name = "thatch")]
-#[command(about = "A deep, complex roguelike with LLM-driven dungeon mastering")]
-#[command(version)]
+#[clap(name = "thatch")]
+#[clap(about = "A deep, complex roguelike with LLM-driven dungeon mastering")]
+#[clap(version)]
 struct Args {
     /// Random seed for dungeon generation
-    #[arg(short, long)]
+    #[clap(short, long)]
     seed: Option<u64>,
 
     /// Enable development mode with debug tools
-    #[arg(long)]
+    #[clap(long)]
     dev_mode: bool,
 
     /// Enable AI player mode
-    #[arg(long)]
+    #[clap(long)]
     ai_player: bool,
 
     /// Start MCP server mode
-    #[arg(long)]
+    #[clap(long)]
     mcp_server: bool,
 
     /// Log level (error, warn, info, debug, trace)
-    #[arg(long, default_value = "info")]
+    #[clap(long, default_value = "info")]
     log_level: String,
 }
 
@@ -137,19 +136,11 @@ async fn run_game_loop(
     // Generate a proper dungeon level
     let seed = args.seed.unwrap_or(12345);
 
-    info!("Generating dungeon level with seed: {}", seed);
+    info!("Generating complete 3D dungeon with seed: {}", seed);
 
-    // Create generation configuration
-    let config = GenerationConfig::for_testing(seed);
-    let generator = RoomCorridorGenerator::for_testing();
-    let mut rng = thatch::generation::utils::create_rng(&config);
-
-    // Generate the level
-    let level = generator.generate(&config, &mut rng)?;
-
-    // Initialize game state
-    info!("Initializing game state");
-    let mut game_state = GameState::new_with_level(level, seed)?;
+    // Initialize game state with complete 3D dungeon (all 26 floors)
+    info!("Initializing game state with 3D dungeon generation");
+    let mut game_state = GameState::new_with_complete_dungeon(seed)?;
 
     // Create and place player at the spawn point
     let player_pos = if let Some(level) = game_state.world.current_level() {
@@ -191,7 +182,7 @@ async fn run_game_loop(
 
                 thatch::PlayerInput::Help => {
                     display.add_message("Help: WASD/arrows=move, ESC=quit, SPACE=wait, F12=autoexplore".to_string());
-                    continue;
+                    // Don't use continue - need to render and wait for next frame
                 }
 
                 thatch::PlayerInput::ToggleAutoexplore => {
@@ -201,7 +192,7 @@ async fn run_game_loop(
                     } else {
                         display.add_message("Autoexplore disabled".to_string());
                     }
-                    continue;
+                    // Don't use continue - need to render and wait for next frame
                 }
 
                 _ => {

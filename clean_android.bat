@@ -13,7 +13,7 @@ echo What would you like to clean?
 echo.
 echo 1. Android build artifacts only (APK, AAB, temp files)
 echo 2. All build artifacts (including Rust target directory)
-echo 3. Docker images and containers
+echo 3. Container images and containers (Docker/Podman)
 echo 4. Everything (full clean)
 echo 5. Exit
 echo.
@@ -23,7 +23,7 @@ set /p "choice=Enter your choice (1-5): "
 
 if "%choice%"=="1" goto clean_android
 if "%choice%"=="2" goto clean_all_builds
-if "%choice%"=="3" goto clean_docker
+if "%choice%"=="3" goto clean_containers
 if "%choice%"=="4" goto clean_everything
 if "%choice%"=="5" goto exit
 echo Invalid choice. Please enter 1-5.
@@ -79,41 +79,51 @@ echo 🧹 All build artifacts cleaned!
 echo Note: Next build will take longer as everything needs to be recompiled.
 goto end
 
-:clean_docker
+:clean_containers
 echo.
-echo Cleaning Docker images and containers...
+echo Cleaning container images and containers...
 
-echo Checking Docker status...
-docker info >nul 2>&1
-if errorlevel 1 (
-    echo ⚠️  Docker is not running. Cannot clean Docker artifacts.
-    goto end
-)
-
-echo.
-echo Cleaning up Docker containers...
-for /f "tokens=*" %%i in ('docker ps -aq --filter "ancestor=notfl3/cargo-apk"') do (
-    echo Removing container %%i...
-    docker rm %%i
-)
-
-echo.
-echo Cleaning up Docker images...
-echo This will remove the cargo-apk image (can be re-downloaded later)
-set /p "confirm=Remove cargo-apk Docker image? (y/N): "
-if /i "%confirm%"=="y" (
-    docker rmi notfl3/cargo-apk
-    echo ✅ Removed cargo-apk Docker image
+REM Detect available container runtime
+set "CONTAINER_CMD="
+podman info >nul 2>&1
+if not errorlevel 1 (
+    set "CONTAINER_CMD=podman"
+    echo Using Podman for cleanup
 ) else (
-    echo ✅ Kept cargo-apk Docker image
+    docker info >nul 2>&1
+    if not errorlevel 1 (
+        set "CONTAINER_CMD=docker"
+        echo Using Docker for cleanup
+    ) else (
+        echo ⚠️  Neither Docker nor Podman is running. Cannot clean container artifacts.
+        goto end
+    )
 )
 
 echo.
-echo Running Docker system prune...
-docker system prune -f
+echo Cleaning up containers...
+for /f "tokens=*" %%i in ('%CONTAINER_CMD% ps -aq --filter "ancestor=docker.io/notfl3/cargo-apk"') do (
+    echo Removing container %%i...
+    %CONTAINER_CMD% rm %%i
+)
 
 echo.
-echo 🧹 Docker cleanup complete!
+echo Cleaning up images...
+echo This will remove the cargo-apk image (can be re-downloaded later)
+set /p "confirm=Remove cargo-apk container image? (y/N): "
+if /i "%confirm%"=="y" (
+    %CONTAINER_CMD% rmi docker.io/notfl3/cargo-apk
+    echo ✅ Removed cargo-apk container image
+) else (
+    echo ✅ Kept cargo-apk container image
+)
+
+echo.
+echo Running system prune...
+%CONTAINER_CMD% system prune -f
+
+echo.
+echo 🧹 Container cleanup complete!
 goto end
 
 :clean_everything
@@ -146,16 +156,26 @@ if exist "temp_aab" (
     echo ✅ Removed temp_aab directory
 )
 
-REM Clean Docker if available
-docker info >nul 2>&1
+REM Clean containers if available
+set "CLEANUP_CONTAINER_CMD="
+podman info >nul 2>&1
 if not errorlevel 1 (
-    echo Cleaning Docker...
-    for /f "tokens=*" %%i in ('docker ps -aq --filter "ancestor=notfl3/cargo-apk"') do (
-        docker rm %%i >nul 2>&1
+    set "CLEANUP_CONTAINER_CMD=podman"
+) else (
+    docker info >nul 2>&1
+    if not errorlevel 1 (
+        set "CLEANUP_CONTAINER_CMD=docker"
     )
-    docker rmi notfl3/cargo-apk >nul 2>&1
-    docker system prune -f >nul 2>&1
-    echo ✅ Docker cleaned
+)
+
+if not "%CLEANUP_CONTAINER_CMD%"=="" (
+    echo Cleaning containers...
+    for /f "tokens=*" %%i in ('%CLEANUP_CONTAINER_CMD% ps -aq --filter "ancestor=docker.io/notfl3/cargo-apk"') do (
+        %CLEANUP_CONTAINER_CMD% rm %%i >nul 2>&1
+    )
+    %CLEANUP_CONTAINER_CMD% rmi docker.io/notfl3/cargo-apk >nul 2>&1
+    %CLEANUP_CONTAINER_CMD% system prune -f >nul 2>&1
+    echo ✅ Containers cleaned
 )
 
 echo.
@@ -181,17 +201,27 @@ if exist "target" (
     echo - Build cache: Cleaned ✅  
 )
 
-REM Check Docker image
-docker info >nul 2>&1
+REM Check container image
+set "CHECK_CONTAINER_CMD="
+podman info >nul 2>&1
 if not errorlevel 1 (
-    docker images notfl3/cargo-apk >nul 2>&1
+    set "CHECK_CONTAINER_CMD=podman"
+) else (
+    docker info >nul 2>&1
+    if not errorlevel 1 (
+        set "CHECK_CONTAINER_CMD=docker"
+    )
+)
+
+if not "%CHECK_CONTAINER_CMD%"=="" (
+    %CHECK_CONTAINER_CMD% images docker.io/notfl3/cargo-apk >nul 2>&1
     if errorlevel 1 (
-        echo - Docker image: Cleaned ✅
+        echo - Container image: Cleaned ✅
     ) else (
-        echo - Docker image: Present
+        echo - Container image: Present
     )
 ) else (
-    echo - Docker: Not running
+    echo - Container runtime: Not running
 )
 
 echo.

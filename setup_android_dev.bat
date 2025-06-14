@@ -9,42 +9,64 @@ echo   Thatch Roguelike - Android Development Setup
 echo =================================================
 echo.
 
-REM Check if Docker is installed
-echo Checking Docker installation...
-docker --version >nul 2>&1
-if errorlevel 1 (
-    echo ❌ Docker is not installed or not in PATH.
-    echo.
-    echo Please install Docker Desktop from:
-    echo https://www.docker.com/products/docker-desktop
-    echo.
-    echo After installation:
-    echo 1. Start Docker Desktop
-    echo 2. Run this script again
-    pause
-    exit /b 1
-) else (
-    echo ✅ Docker is installed
-    docker --version
+REM Detect container runtime (Docker or Podman)
+set "CONTAINER_CMD="
+
+echo Checking for container runtime...
+REM Check for Podman first
+podman --version >nul 2>&1
+if not errorlevel 1 (
+    podman info >nul 2>&1
+    if not errorlevel 1 (
+        set "CONTAINER_CMD=podman"
+        echo ✅ Podman is installed and running
+        podman --version
+        goto :container_found
+    ) else (
+        echo ⚠️  Podman is installed but not running
+    )
 )
 
-echo.
-echo Checking Docker daemon status...
-docker info >nul 2>&1
-if errorlevel 1 (
-    echo ⚠️  Docker daemon is not running.
-    echo Please start Docker Desktop and try again.
-    echo.
-    echo To start Docker Desktop:
-    echo 1. Open Docker Desktop from Start Menu
-    echo 2. Wait for it to start (may take a few minutes)
-    echo 3. Look for Docker icon in system tray
-    echo 4. Run this script again
-    pause
-    exit /b 1
-) else (
-    echo ✅ Docker daemon is running
+REM Check for Docker
+docker --version >nul 2>&1
+if not errorlevel 1 (
+    docker info >nul 2>&1
+    if not errorlevel 1 (
+        set "CONTAINER_CMD=docker"
+        echo ✅ Docker is installed and running
+        docker --version
+        goto :container_found
+    ) else (
+        echo ⚠️  Docker is installed but daemon is not running
+        echo Please start Docker Desktop and try again.
+        echo.
+        echo To start Docker Desktop:
+        echo 1. Open Docker Desktop from Start Menu
+        echo 2. Wait for it to start (may take a few minutes)
+        echo 3. Look for Docker icon in system tray
+        echo 4. Run this script again
+        pause
+        exit /b 1
+    )
 )
+
+REM Neither container runtime is available
+echo ❌ Neither Docker nor Podman is installed or running.
+echo.
+echo Please install one of the following:
+echo.
+echo Docker Desktop:
+echo https://www.docker.com/products/docker-desktop
+echo.
+echo Podman Desktop:
+echo https://podman-desktop.io/
+echo.
+echo After installation, start the application and run this script again.
+pause
+exit /b 1
+
+:container_found
+echo Using %CONTAINER_CMD% as container runtime
 
 echo.
 echo Checking Rust installation...
@@ -99,16 +121,16 @@ if not exist "target\android-artifacts\release\aab" (
 )
 
 echo.
-echo Pulling Docker image for Android builds...
+echo Pulling container image for Android builds...
 echo This may take a few minutes on first run...
-docker pull notfl3/cargo-apk
+%CONTAINER_CMD% pull docker.io/notfl3/cargo-apk
 if errorlevel 1 (
-    echo ❌ Failed to pull Docker image
+    echo ❌ Failed to pull container image
     echo Check your internet connection and try again
     pause
     exit /b 1
 ) else (
-    echo ✅ Docker image ready
+    echo ✅ Container image ready
 )
 
 echo.

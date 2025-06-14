@@ -129,9 +129,9 @@ impl UI {
         let screen_w = screen_width();
         let screen_h = screen_height();
         
-        // Button dimensions
-        let button_size = 60.0;
-        let button_margin = 10.0;
+        // Button dimensions - increased for better touch targets
+        let button_size = 70.0;
+        let button_margin = 12.0;
         
         // Movement pad (left side)
         let pad_x = button_margin;
@@ -157,28 +157,32 @@ impl UI {
     fn render_movement_pad(&self, x: f32, y: f32, size: f32, margin: f32) -> Option<PlayerInput> {
         let mut input = None;
         
+        // Bright blue for better visibility on Android
+        let move_color = Color::new(0.0, 0.4, 1.0, 1.0);
+        let wait_color = Color::new(0.6, 0.6, 0.6, 1.0);
+        
         // Up button
-        if self.render_button("↑", x + size + margin, y, size, size, BLUE) {
+        if self.render_button("↑", x + size + margin, y, size, size, move_color) {
             input = Some(PlayerInput::Move(Position::new(0, -1)));
         }
         
         // Left button  
-        if self.render_button("←", x, y + size + margin, size, size, BLUE) {
+        if self.render_button("←", x, y + size + margin, size, size, move_color) {
             input = Some(PlayerInput::Move(Position::new(-1, 0)));
         }
         
         // Center (wait) button
-        if self.render_button("⏸", x + size + margin, y + size + margin, size, size, GRAY) {
+        if self.render_button("WAIT", x + size + margin, y + size + margin, size, size, wait_color) {
             input = Some(PlayerInput::Wait);
         }
         
         // Right button
-        if self.render_button("→", x + (size + margin) * 2.0, y + size + margin, size, size, BLUE) {
+        if self.render_button("→", x + (size + margin) * 2.0, y + size + margin, size, size, move_color) {
             input = Some(PlayerInput::Move(Position::new(1, 0)));
         }
         
         // Down button
-        if self.render_button("↓", x + size + margin, y + (size + margin) * 2.0, size, size, BLUE) {
+        if self.render_button("↓", x + size + margin, y + (size + margin) * 2.0, size, size, move_color) {
             input = Some(PlayerInput::Move(Position::new(0, 1)));
         }
         
@@ -189,23 +193,23 @@ impl UI {
     fn render_action_buttons(&self, x: f32, y: f32, size: f32, margin: f32) -> Option<PlayerInput> {
         let mut input = None;
         
-        // Up stairs button
-        if self.render_button("⬆", x, y, size, size, GREEN) {
+        // Up stairs button - bright green for better visibility
+        if self.render_button("UP", x, y, size, size, Color::new(0.0, 0.8, 0.0, 1.0)) {
             input = Some(PlayerInput::UseStairs(StairDirection::Up));
         }
         
-        // Down stairs button  
-        if self.render_button("⬇", x + size + margin, y, size, size, GREEN) {
+        // Down stairs button - bright green for better visibility  
+        if self.render_button("DN", x + size + margin, y, size, size, Color::new(0.0, 0.8, 0.0, 1.0)) {
             input = Some(PlayerInput::UseStairs(StairDirection::Down));
         }
         
-        // Autoexplore button
-        if self.render_button("🔍", x, y + size + margin, size, size, YELLOW) {
+        // Autoexplore button - bright purple for better visibility
+        if self.render_button("AUTO", x, y + size + margin, size, size, Color::new(0.8, 0.0, 0.8, 1.0)) {
             input = Some(PlayerInput::ToggleAutoexplore);
         }
         
-        // Help button
-        if self.render_button("?", x + size + margin, y + size + margin, size, size, ORANGE) {
+        // Help button - bright orange for better visibility
+        if self.render_button("HELP", x + size + margin, y + size + margin, size, size, Color::new(1.0, 0.6, 0.0, 1.0)) {
             input = Some(PlayerInput::Help);
         }
         
@@ -219,21 +223,34 @@ impl UI {
                         mouse_pos.1 >= y && mouse_pos.1 <= y + height;
         
         let button_color = if is_hovered { 
-            Color::new(color.r * 1.2, color.g * 1.2, color.b * 1.2, color.a)
+            Color::new(
+                (color.r * 1.5).min(1.0), 
+                (color.g * 1.5).min(1.0), 
+                (color.b * 1.5).min(1.0), 
+                color.a
+            )
         } else { 
             color 
         };
         
-        // Draw button background
+        // Draw button background with better contrast
         draw_rectangle(x, y, width, height, button_color);
-        draw_rectangle_lines(x, y, width, height, 2.0, WHITE);
+        draw_rectangle_lines(x, y, width, height, 3.0, WHITE);
         
-        // Draw button text
-        let text_size = 24.0;
+        // Add inner shadow for better visibility
+        draw_rectangle_lines(x + 1.0, y + 1.0, width - 2.0, height - 2.0, 1.0, LIGHTGRAY);
+        
+        // Draw button text with better contrast
+        let text_size = 28.0;  // Larger text for better visibility
         let text_width = text.len() as f32 * text_size * 0.6;
         let text_x = x + (width - text_width) / 2.0;
         let text_y = y + height / 2.0 + text_size / 2.0;
         
+        // Draw text with outline for better visibility on Android
+        draw_text(text, text_x - 1.0, text_y - 1.0, text_size, BLACK);
+        draw_text(text, text_x + 1.0, text_y - 1.0, text_size, BLACK);
+        draw_text(text, text_x - 1.0, text_y + 1.0, text_size, BLACK);
+        draw_text(text, text_x + 1.0, text_y + 1.0, text_size, BLACK);
         draw_text(text, text_x, text_y, text_size, WHITE);
         
         // Check if button was pressed

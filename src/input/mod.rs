@@ -115,19 +115,7 @@ impl InputHandler {
                 return Some(PlayerInput::Move(Position::new(1, 0)));
             }
 
-            // Diagonal movement
-            if is_key_pressed(KeyCode::Y) {
-                return Some(PlayerInput::Move(Position::new(-1, -1)));
-            }
-            if is_key_pressed(KeyCode::U) {
-                return Some(PlayerInput::Move(Position::new(1, -1)));
-            }
-            if is_key_pressed(KeyCode::B) {
-                return Some(PlayerInput::Move(Position::new(-1, 1)));
-            }
-            if is_key_pressed(KeyCode::N) {
-                return Some(PlayerInput::Move(Position::new(1, 1)));
-            }
+            // No diagonal movement keys - removed for cardinal-only movement
         }
 
         // Wait/rest

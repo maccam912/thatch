@@ -13,7 +13,15 @@
       "Bash(RUST_BACKTRACE=1 cargo test test_new_algorithm_generation)",
       "WebFetch(domain:macroquad.rs)",
       "Bash(chmod:*)",
-      "Bash(docker:*)"
+      "Bash(docker:*)",
+      "WebFetch(domain:docs.rs)",
+      "Bash(CARGO_RESOLVER_PRECEDENCE=1 cargo +1.63 generate-lockfile)",
+      "Bash(ls:*)",
+      "Bash(aapt:*)",
+      "Bash(unzip:*)",
+      "Bash(jarsigner:*)",
+      "Bash(zipinfo:*)",
+      "Bash(./build_android.sh:*)"
     ],
     "deny": []
   }

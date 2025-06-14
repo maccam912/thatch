@@ -32,7 +32,7 @@ impl AutoexploreState {
             current_path: Vec::new(),
             target: None,
             last_action_time: None,
-            action_delay_ms: 200, // 200ms between actions = 5 actions per second
+            action_delay_ms: 500, // 500ms between actions = 2 actions per second (slower for stability)
         }
     }
 
@@ -64,7 +64,11 @@ impl AutoexploreState {
 
     /// Gets the next autoexplore action to perform.
     pub fn get_next_action(&mut self, game_state: &GameState) -> ThatchResult<Option<ConcreteAction>> {
-        if !self.enabled || !self.can_perform_action() {
+        if !self.enabled {
+            return Ok(None);
+        }
+        
+        if !self.can_perform_action() {
             return Ok(None);
         }
 
@@ -77,12 +81,20 @@ impl AutoexploreState {
         if let Some(level) = game_state.world.current_level() {
             if let Some(tile) = level.get_tile(player_pos) {
                 if tile.tile_type == TileType::StairsDown {
-                    // We're on stairs down, use them
-                    self.mark_action_performed();
-                    return Ok(Some(ConcreteAction::UseStairs(UseStairsAction::new(
-                        player_id,
-                        StairDirection::Down,
-                    ))));
+                    // Safety check: ensure the next level exists before using stairs
+                    let current_level_id = game_state.world.current_level_id;
+                    if current_level_id < 25 && game_state.world.get_level(current_level_id + 1).is_some() {
+                        // We're on stairs down and next level exists, use them
+                        self.mark_action_performed();
+                        return Ok(Some(ConcreteAction::UseStairs(UseStairsAction::new(
+                            player_id,
+                            StairDirection::Down,
+                        ))));
+                    } else {
+                        // Can't go down further, disable autoexplore
+                        self.enabled = false;
+                        return Err(ThatchError::InvalidState("Reached bottom of dungeon, disabling autoexplore".to_string()));
+                    }
                 }
             }
         }
@@ -106,6 +118,11 @@ impl AutoexploreState {
         // We need a new path - find stairs down
         if let Some(stairs_down_pos) = self.find_stairs_down(game_state) {
             if let Some(path) = self.find_path(game_state, player_pos, stairs_down_pos)? {
+                // Safety check: limit path length to prevent infinite loops
+                if path.len() > 1000 {
+                    return Err(ThatchError::InvalidState("Autoexplore path too long".to_string()));
+                }
+                
                 self.current_path = path;
                 self.target = Some(stairs_down_pos);
                 
@@ -121,7 +138,15 @@ impl AutoexploreState {
                         })));
                     }
                 }
+            } else {
+                // No path found to stairs, disable autoexplore
+                self.enabled = false;
+                return Err(ThatchError::InvalidState("No path to stairs found, disabling autoexplore".to_string()));
             }
+        } else {
+            // No stairs found, disable autoexplore
+            self.enabled = false;
+            return Err(ThatchError::InvalidState("No stairs down found, disabling autoexplore".to_string()));
         }
 
         // No stairs down found or no path available
@@ -258,7 +283,7 @@ impl Ord for AStarNode {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{Level, Tile, PlayerCharacter, ConcreteEntity, GameState};
+    use crate::{Level, Tile, GameState};
 
     #[test]
     fn test_autoexplore_state_creation() {
@@ -292,8 +317,8 @@ mod tests {
         let to = Position::new(6, 5); // East
         assert_eq!(autoexplore.get_direction_to_position(from, to), Some(Direction::East));
         
-        let to = Position::new(4, 6); // Southwest
-        assert_eq!(autoexplore.get_direction_to_position(from, to), Some(Direction::Southwest));
+        let to = Position::new(4, 5); // West
+        assert_eq!(autoexplore.get_direction_to_position(from, to), Some(Direction::West));
     }
 
     #[test]
@@ -309,7 +334,7 @@ mod tests {
         }
         
         // Create game state
-        let mut game_state = GameState::new_with_level(level, 12345).unwrap();
+        let game_state = GameState::new_with_level(level, 12345).unwrap();
         
         // Test pathfinding
         let start = Position::new(1, 1);

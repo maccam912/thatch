@@ -49,7 +49,7 @@ pub use game::{
 };
 
 pub use generation::{
-    GenerationConfig, Generator, Room, RoomType, RoomCorridorGenerator,
+    GenerationConfig, Generator, Room, RoomType, RoomCorridorGenerator, WorldGenerator,
 };
 
 pub use rendering::{

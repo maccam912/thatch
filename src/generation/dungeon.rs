@@ -8,7 +8,7 @@
 
 use crate::generation::utils;
 use crate::{ThatchError, ThatchResult};
-use crate::game::{Level, Position, Tile, TileType};
+use crate::game::{Level, Position, Tile, TileType, World};
 use crate::generation::{GenerationConfig, Generator, Room, RoomType};
 use rand::{rngs::StdRng, Rng};
 use std::cmp::Ordering;
@@ -47,11 +47,12 @@ impl Ord for AStarNode {
 
 /// Primary dungeon generator using overlapping rooms and progressive wall placement.
 ///
-/// This generator creates dungeons by:
-/// 1. Placing rooms randomly (overlapping is allowed for interesting shapes)
-/// 2. Starting with all non-room spaces as open floor
-/// 3. Progressively adding walls while maintaining connectivity between all rooms
-/// 4. Stopping when connectivity failures reach a threshold or no spaces remain
+/// This generator creates entire 3D dungeons by:
+/// 1. Placing stairs on all 26 floors first to ensure vertical connectivity
+/// 2. Placing rooms around stairs and randomly on each floor
+/// 3. Starting with all non-room spaces as open floor
+/// 4. Progressively adding walls while maintaining connectivity
+/// 5. Ensuring stairs are always connected within each level
 #[derive(Debug, Clone)]
 pub struct RoomCorridorGenerator {
     /// Strategy for room placement
@@ -62,6 +63,8 @@ pub struct RoomCorridorGenerator {
     pub max_placement_attempts: u32,
     /// Whether to ensure all rooms are connected (always true for this algorithm)
     pub ensure_connectivity: bool,
+    /// Whether to generate all 26 floors at once (3D generation)
+    pub generate_all_floors: bool,
 }
 
 /// Strategies for placing rooms in the dungeon.
@@ -91,9 +94,10 @@ impl RoomCorridorGenerator {
     pub fn new() -> Self {
         Self {
             room_placement_strategy: RoomPlacementStrategy::Random,
-            max_connectivity_failures: 100,
+            max_connectivity_failures: 1000,
             max_placement_attempts: 100,
             ensure_connectivity: true,
+            generate_all_floors: true,
         }
     }
 
@@ -118,6 +122,7 @@ impl RoomCorridorGenerator {
             max_connectivity_failures,
             max_placement_attempts: 100,
             ensure_connectivity: true,
+            generate_all_floors: true,
         }
     }
 
@@ -128,6 +133,7 @@ impl RoomCorridorGenerator {
             max_connectivity_failures: 50,
             max_placement_attempts: 50,
             ensure_connectivity: true,
+            generate_all_floors: false, // Single floor for testing
         }
     }
 
@@ -135,9 +141,10 @@ impl RoomCorridorGenerator {
     pub fn for_detailed_generation() -> Self {
         Self {
             room_placement_strategy: RoomPlacementStrategy::NoiseGuided,
-            max_connectivity_failures: 200,
+            max_connectivity_failures: 1500,
             max_placement_attempts: 200,
             ensure_connectivity: true,
+            generate_all_floors: true,
         }
     }
 
@@ -354,9 +361,21 @@ impl RoomCorridorGenerator {
     ) -> ThatchResult<()> {
         let mut connectivity_failures = 0;
         let mut available_positions = self.get_non_room_floor_positions(level, rooms);
+        
+        // For 3D generation, be less aggressive with wall placement
+        let max_failures = if self.generate_all_floors { 
+            self.max_connectivity_failures / 2 
+        } else { 
+            self.max_connectivity_failures 
+        };
+        
+        // Also limit the number of positions we try to convert
+        let max_walls_to_place = available_positions.len() / 3; // Only convert 1/3 of available positions
+        let mut walls_placed = 0;
 
-        while connectivity_failures < self.max_connectivity_failures
+        while connectivity_failures < max_failures
             && !available_positions.is_empty()
+            && walls_placed < max_walls_to_place
         {
             // Randomly select a position to potentially place a wall
             let index = rng.gen_range(0..available_positions.len());
@@ -369,6 +388,7 @@ impl RoomCorridorGenerator {
             // Test if all rooms are still connected
             if self.all_rooms_connected(level, rooms)? {
                 // Wall placement is valid, keep it
+                walls_placed += 1;
                 continue;
             } else {
                 // Wall breaks connectivity, remove it and count as failure
@@ -483,15 +503,32 @@ impl RoomCorridorGenerator {
         // Find all reachable floor tiles using flood fill
         let reachable_tiles = self.flood_fill_reachable(level, spawn_pos)?;
         
-        // Convert all unreachable floor tiles to walls
+        // Ensure we have at least some reachable tiles
+        if reachable_tiles.is_empty() {
+            // This is a critical error - the spawn position should always be reachable
+            return Err(ThatchError::GenerationFailed(
+                format!("Spawn position {:?} is not reachable", spawn_pos)
+            ));
+        }
+        
+        // Convert all unreachable floor tiles to walls, but preserve stairs
         for y in 0..level.height as i32 {
             for x in 0..level.width as i32 {
                 let pos = Position::new(x, y);
                 
                 if let Some(tile) = level.get_tile(pos) {
-                    // If it's a floor tile but not reachable, convert to wall
-                    if tile.tile_type.is_passable() && !reachable_tiles.contains(&pos) {
-                        level.set_tile(pos, Tile::wall())?;
+                    // Don't convert stairs to walls, even if unreachable
+                    match tile.tile_type {
+                        TileType::StairsUp | TileType::StairsDown => {
+                            // Keep stairs as they are
+                            continue;
+                        }
+                        _ => {
+                            // If it's a passable tile but not reachable, convert to wall
+                            if tile.tile_type.is_passable() && !reachable_tiles.contains(&pos) {
+                                level.set_tile(pos, Tile::wall())?;
+                            }
+                        }
                     }
                 }
             }
@@ -804,11 +841,249 @@ impl RoomCorridorGenerator {
         
         points
     }
+
+    /// Generates a complete 3D dungeon with all 26 floors at once.
+    ///
+    /// This method creates all levels with aligned stairs and proper connectivity:
+    /// 1. Places stairs on all floors first to ensure vertical alignment
+    /// 2. Creates rooms around stairs and randomly places additional rooms
+    /// 3. Applies the standard generation algorithm to each floor
+    pub fn generate_complete_dungeon(&self, config: &GenerationConfig, rng: &mut StdRng) -> ThatchResult<World> {
+        let mut world = World::new(config.seed);
+        
+        // Step 1: Generate stairs positions for all 26 floors
+        let stair_positions = self.generate_stair_layout(config, rng)?;
+        
+        // Step 2: Generate each floor with pre-placed stairs
+        for floor_id in 0..26 {
+            let level = self.generate_floor_with_stairs(
+                floor_id, 
+                &stair_positions, 
+                config, 
+                rng
+            )?;
+            
+            world.add_level(level);
+        }
+        
+        Ok(world)
+    }
+    
+    /// Generates the stair layout for all 26 floors.
+    ///
+    /// Returns a map of floor_id -> (stairs_up_pos, stairs_down_pos)
+    /// Ensures vertical alignment between floors.
+    fn generate_stair_layout(&self, _config: &GenerationConfig, rng: &mut StdRng) -> ThatchResult<HashMap<u32, (Option<Position>, Option<Position>)>> {
+        let mut stair_positions = HashMap::new();
+        
+        // Determine level dimensions (consistent across all floors)
+        let level_width = 80;  // Fixed reasonable size
+        let level_height = 50;
+        
+        // Generate stairs positions ensuring vertical alignment
+        for floor_id in 0..26 {
+            let stairs_up = if floor_id > 0 {
+                // Use the down stairs position from the floor above
+                stair_positions.get(&(floor_id - 1))
+                    .and_then(|(_, down_pos)| *down_pos)
+            } else {
+                None // No up stairs on floor 0
+            };
+            
+            let stairs_down = if floor_id < 25 {
+                // Generate a new down stairs position for this floor
+                let x = rng.gen_range(5..(level_width as i32 - 5));
+                let y = rng.gen_range(5..(level_height as i32 - 5));
+                
+                // Ensure down stairs is not too close to up stairs
+                let pos = if let Some(up_pos) = stairs_up {
+                    let mut attempts = 0;
+                    let mut candidate_pos = Position::new(x, y);
+                    
+                    while attempts < 20 && candidate_pos.manhattan_distance(up_pos) < 10 {
+                        let new_x = rng.gen_range(5..(level_width as i32 - 5));
+                        let new_y = rng.gen_range(5..(level_height as i32 - 5));
+                        candidate_pos = Position::new(new_x, new_y);
+                        attempts += 1;
+                    }
+                    
+                    candidate_pos
+                } else {
+                    Position::new(x, y)
+                };
+                
+                Some(pos)
+            } else {
+                None // No down stairs on floor 25
+            };
+            
+            stair_positions.insert(floor_id, (stairs_up, stairs_down));
+        }
+        
+        Ok(stair_positions)
+    }
+    
+    /// Generates a single floor with pre-placed stairs.
+    fn generate_floor_with_stairs(
+        &self,
+        floor_id: u32,
+        stair_positions: &HashMap<u32, (Option<Position>, Option<Position>)>,
+        config: &GenerationConfig,
+        rng: &mut StdRng,
+    ) -> ThatchResult<Level> {
+        let level_width = 80;
+        let level_height = 50;
+        let mut level = Level::new(floor_id, level_width, level_height);
+        
+        // Get stairs positions for this floor
+        let (stairs_up_pos, stairs_down_pos) = stair_positions.get(&floor_id)
+            .cloned()
+            .unwrap_or((None, None));
+        
+        // Set stairs positions in level
+        level.stairs_up_position = stairs_up_pos;
+        level.stairs_down_position = stairs_down_pos;
+        
+        // Step 1: Create rooms around stairs and additional random rooms
+        let mut rooms = Vec::new();
+        let mut room_id = 0;
+        
+        // Create room around stairs up (if exists)
+        if let Some(up_pos) = stairs_up_pos {
+            let room = self.create_room_around_position(room_id, up_pos, config, rng, &level)?;
+            rooms.push(room);
+            room_id += 1;
+        }
+        
+        // Create room around stairs down (if exists)
+        if let Some(down_pos) = stairs_down_pos {
+            let room = self.create_room_around_position(room_id, down_pos, config, rng, &level)?;
+            rooms.push(room);
+            room_id += 1;
+        }
+        
+        // Add 2-5 additional random rooms, with more attempts if we don't have many rooms yet
+        let target_additional_rooms = rng.gen_range(2..=5);
+        let mut attempts = 0;
+        let max_attempts = target_additional_rooms * 10; // More attempts per room
+        
+        while rooms.len() < (target_additional_rooms + if stairs_up_pos.is_some() { 1 } else { 0 } + if stairs_down_pos.is_some() { 1 } else { 0 }) 
+              && attempts < max_attempts {
+            if let Some(room) = self.try_place_room_overlapping(&level, config, rng, room_id)? {
+                rooms.push(room);
+                room_id += 1;
+            }
+            attempts += 1;
+        }
+        
+        // If we still have very few rooms, force place at least one room
+        if rooms.is_empty() {
+            // Force place a room at the center of the level
+            let center_room = Room::new(
+                room_id,
+                Position::new(level_width as i32 / 2 - 5, level_height as i32 / 2 - 5),
+                10,
+                10,
+                RoomType::Normal,
+            );
+            rooms.push(center_room);
+        }
+        
+        // Set player spawn to stairs up position, or center of first room if no stairs up
+        level.player_spawn = if let Some(up_pos) = stairs_up_pos {
+            up_pos
+        } else {
+            // For floor 0, spawn in the center of the first room
+            rooms[0].center()
+        };
+        
+        // Step 2: Initialize level with rooms and open floor everywhere else
+        self.initialize_level_with_rooms(&mut level, &rooms)?;
+        
+        // Step 3: Place stairs tiles
+        if let Some(up_pos) = stairs_up_pos {
+            level.set_tile(up_pos, Tile::new(TileType::StairsUp))?;
+        }
+        if let Some(down_pos) = stairs_down_pos {
+            level.set_tile(down_pos, Tile::new(TileType::StairsDown))?;
+        }
+        
+        // Step 4: Progressively add walls while maintaining connectivity
+        // Note: This step can be aggressive, so we'll limit it for 3D generation
+        self.progressive_wall_placement(&mut level, &rooms, rng)?;
+        
+        // Step 5: Ensure stairs are connected if both exist
+        if let (Some(up_pos), Some(down_pos)) = (stairs_up_pos, stairs_down_pos) {
+            if !self.has_path(&level, up_pos, down_pos)? {
+                self.create_stair_connection(&mut level, up_pos, down_pos)?;
+            }
+        }
+        
+        // Step 6: Fill unreachable areas with walls (disabled for now to debug)
+        // NOTE: This step might be too aggressive for 3D generation
+        // self.fill_unreachable_areas(&mut level)?;
+        
+        // Final validation with better error reporting
+        let floor_count = level.tiles.iter()
+            .flat_map(|row| row.iter())
+            .filter(|tile| tile.tile_type.is_passable())
+            .count();
+            
+        if floor_count == 0 {
+            return Err(ThatchError::GenerationFailed(
+                format!("Floor {} generation resulted in no passable tiles. Rooms: {}, Spawn: {:?}, Up stairs: {:?}, Down stairs: {:?}", 
+                    floor_id, rooms.len(), level.player_spawn, stairs_up_pos, stairs_down_pos)
+            ));
+        }
+        
+        utils::validate_level(&level)?;
+        
+        Ok(level)
+    }
+    
+    /// Creates a room around a specific position (usually stairs).
+    fn create_room_around_position(
+        &self,
+        room_id: u32,
+        center: Position,
+        config: &GenerationConfig,
+        rng: &mut StdRng,
+        level: &Level,
+    ) -> ThatchResult<Room> {
+        let room_width = rng.gen_range(config.min_room_size..=config.max_room_size);
+        let room_height = rng.gen_range(config.min_room_size..=config.max_room_size);
+        
+        // Calculate top-left position to center the room around the given position
+        let top_left_x = (center.x - room_width as i32 / 2).max(1);
+        let top_left_y = (center.y - room_height as i32 / 2).max(1);
+        
+        // Ensure room fits within level bounds
+        let adjusted_x = top_left_x.min(level.width as i32 - room_width as i32 - 1);
+        let adjusted_y = top_left_y.min(level.height as i32 - room_height as i32 - 1);
+        
+        let room_type = self.determine_room_type(room_id, config, rng);
+        
+        Ok(Room::new(
+            room_id,
+            Position::new(adjusted_x, adjusted_y),
+            room_width,
+            room_height,
+            room_type,
+        ))
+    }
 }
 
 impl Generator<Level> for RoomCorridorGenerator {
     fn generate(&self, config: &GenerationConfig, rng: &mut StdRng) -> ThatchResult<Level> {
-        // Create level with reasonable dimensions
+        if self.generate_all_floors {
+            // For 3D generation, just return the first floor of a complete dungeon
+            let world = self.generate_complete_dungeon(config, rng)?;
+            return world.get_level(0)
+                .cloned()
+                .ok_or_else(|| ThatchError::GenerationFailed("Failed to get first level from generated world".to_string()));
+        }
+        
+        // Original single-level generation for testing and specific use cases
         let estimated_width = ((config.max_rooms * config.max_room_size * 2) as f64).sqrt() as u32;
         let estimated_height = estimated_width;
         let width = estimated_width.clamp(50, 200); // Reasonable bounds
@@ -839,6 +1114,14 @@ impl Generator<Level> for RoomCorridorGenerator {
 
         // Final validation
         utils::validate_level(&level)?;
+        
+        // Critical: Final check that stairs are connected if both exist
+        if let (Some(stairs_up), Some(stairs_down)) = (level.stairs_up_position, level.stairs_down_position) {
+            if !self.has_path(&level, stairs_up, stairs_down)? {
+                // This should not happen if our algorithm is correct, but just in case
+                self.create_stair_connection(&mut level, stairs_up, stairs_down)?;
+            }
+        }
 
         Ok(level)
     }
@@ -885,6 +1168,45 @@ impl Generator<Level> for RoomCorridorGenerator {
     }
 }
 
+/// Trait for generating complete dungeon worlds.
+pub trait WorldGenerator {
+    /// Generates a complete multi-level world.
+    fn generate_world(&self, config: &GenerationConfig, rng: &mut StdRng) -> ThatchResult<World>;
+    
+    /// Validates a generated world.
+    fn validate_world(&self, world: &World, config: &GenerationConfig) -> ThatchResult<()>;
+}
+
+impl WorldGenerator for RoomCorridorGenerator {
+    fn generate_world(&self, config: &GenerationConfig, rng: &mut StdRng) -> ThatchResult<World> {
+        self.generate_complete_dungeon(config, rng)
+    }
+    
+    fn validate_world(&self, world: &World, _config: &GenerationConfig) -> ThatchResult<()> {
+        // Validate each level in the world
+        for level in world.levels.values() {
+            utils::validate_level(level)?;
+        }
+        
+        // Validate stair connectivity between levels
+        for level_id in 0..25 {
+            if let (Some(current_level), Some(next_level)) = (world.get_level(level_id), world.get_level(level_id + 1)) {
+                // Check that down stairs on current level align with up stairs on next level
+                if let (Some(down_pos), Some(up_pos)) = (current_level.stairs_down_position, next_level.stairs_up_position) {
+                    if down_pos != up_pos {
+                        return Err(ThatchError::GenerationFailed(
+                            format!("Stair misalignment between levels {} and {}: down at {:?}, up at {:?}", 
+                                level_id, level_id + 1, down_pos, up_pos)
+                        ));
+                    }
+                }
+            }
+        }
+        
+        Ok(())
+    }
+}
+
 impl Default for RoomCorridorGenerator {
     fn default() -> Self {
         Self::new()
@@ -902,7 +1224,7 @@ mod tests {
             generator.room_placement_strategy,
             RoomPlacementStrategy::Random
         );
-        assert_eq!(generator.max_connectivity_failures, 100);
+        assert_eq!(generator.max_connectivity_failures, 1000);
         assert!(generator.ensure_connectivity);
     }
 
@@ -1134,5 +1456,328 @@ mod tests {
         // Verify path exists
         assert!(generator.has_path(&level, stairs_up, stairs_down).unwrap(),
                "Connection should create a valid path between stairs");
+    }
+
+    #[test]
+    fn test_3d_stair_layout_generation() {
+        let generator = RoomCorridorGenerator::new();
+        let config = GenerationConfig::for_testing(12345);
+        let mut rng = utils::create_rng(&config);
+        
+        let stair_positions = generator.generate_stair_layout(&config, &mut rng).unwrap();
+        
+        // Should have positions for all 26 floors
+        assert_eq!(stair_positions.len(), 26);
+        
+        // Floor 0 should have no up stairs but should have down stairs
+        let (up_0, down_0) = stair_positions.get(&0).unwrap();
+        assert!(up_0.is_none());
+        assert!(down_0.is_some());
+        
+        // Floor 25 should have up stairs but no down stairs
+        let (up_25, down_25) = stair_positions.get(&25).unwrap();
+        assert!(up_25.is_some());
+        assert!(down_25.is_none());
+        
+        // Middle floors should have both up and down stairs
+        for floor_id in 1..25 {
+            let (up_pos, down_pos) = stair_positions.get(&floor_id).unwrap();
+            assert!(up_pos.is_some(), "Floor {} should have up stairs", floor_id);
+            assert!(down_pos.is_some(), "Floor {} should have down stairs", floor_id);
+        }
+        
+        // Verify stair alignment: down stairs on floor N should match up stairs on floor N+1
+        for floor_id in 0..25 {
+            let (_, down_pos) = stair_positions.get(&floor_id).unwrap();
+            let (up_pos_next, _) = stair_positions.get(&(floor_id + 1)).unwrap();
+            
+            assert_eq!(down_pos, up_pos_next, 
+                      "Stairs should align between floors {} and {}", floor_id, floor_id + 1);
+        }
+    }
+
+    #[test]
+    fn test_complete_dungeon_generation() {
+        let generator = RoomCorridorGenerator::new();
+        let config = GenerationConfig::for_testing(54321);
+        let mut rng = utils::create_rng(&config);
+        
+        let world = generator.generate_complete_dungeon(&config, &mut rng).unwrap();
+        
+        // Should have all 26 levels
+        assert_eq!(world.levels.len(), 26);
+        
+        // All levels should exist
+        for level_id in 0..26 {
+            assert!(world.get_level(level_id).is_some(), "Level {} should exist", level_id);
+        }
+        
+        // Verify stair connectivity across all levels
+        for level_id in 0..25 {
+            let current_level = world.get_level(level_id).unwrap();
+            let next_level = world.get_level(level_id + 1).unwrap();
+            
+            // Down stairs on current level should match up stairs on next level
+            if let (Some(down_pos), Some(up_pos)) = (current_level.stairs_down_position, next_level.stairs_up_position) {
+                assert_eq!(down_pos, up_pos, 
+                          "Stair positions should match between levels {} and {}", level_id, level_id + 1);
+            }
+        }
+    }
+
+    #[test]
+    fn test_world_generator_trait() {
+        let generator = RoomCorridorGenerator::new();
+        let config = GenerationConfig::for_testing(98765);
+        let mut rng = utils::create_rng(&config);
+        
+        // Test world generation through trait
+        let world = generator.generate_world(&config, &mut rng).unwrap();
+        
+        // Test world validation through trait
+        assert!(generator.validate_world(&world, &config).is_ok());
+        
+        // Should have 26 levels
+        assert_eq!(world.levels.len(), 26);
+    }
+
+    #[test]
+    fn test_room_around_position() {
+        let generator = RoomCorridorGenerator::new();
+        let config = GenerationConfig::for_testing(11111);
+        let mut rng = utils::create_rng(&config);
+        let level = Level::new(0, 50, 40);
+        
+        let center_pos = Position::new(25, 20);
+        let room = generator.create_room_around_position(1, center_pos, &config, &mut rng, &level).unwrap();
+        
+        // Room should contain the center position
+        assert!(room.contains(center_pos), "Room should contain the center position");
+        
+        // Room should be within level bounds
+        assert!(room.top_left.x >= 1);
+        assert!(room.top_left.y >= 1);
+        assert!(room.top_left.x + (room.width as i32) < (level.width as i32) - 1);
+        assert!(room.top_left.y + (room.height as i32) < (level.height as i32) - 1);
+    }
+
+    #[test] 
+    fn test_single_vs_3d_generation() {
+        let config = GenerationConfig::for_testing(22222);
+        let mut rng = utils::create_rng(&config);
+        
+        // Test single floor generation
+        let single_generator = RoomCorridorGenerator::for_testing(); // generate_all_floors = false
+        let single_level = single_generator.generate(&config, &mut rng).unwrap();
+        assert_eq!(single_level.id, 0);
+        
+        // Test 3D generation via single level interface
+        let mut rng2 = utils::create_rng(&config);
+        let multi_generator = RoomCorridorGenerator::new(); // generate_all_floors = true
+        let first_level = multi_generator.generate(&config, &mut rng2).unwrap();
+        assert_eq!(first_level.id, 0);
+        
+        // Both should be valid levels
+        assert!(utils::validate_level(&single_level).is_ok());
+        assert!(utils::validate_level(&first_level).is_ok());
+    }
+
+    #[test]
+    fn test_floor_0_generation_debug() {
+        let generator = RoomCorridorGenerator::new();
+        let config = GenerationConfig::for_testing(99999);
+        let mut rng = utils::create_rng(&config);
+        
+        // Generate stair layout
+        let stair_positions = generator.generate_stair_layout(&config, &mut rng).unwrap();
+        
+        // Test generating just floor 0
+        let floor_0_result = generator.generate_floor_with_stairs(0, &stair_positions, &config, &mut rng);
+        
+        match floor_0_result {
+            Ok(level) => {
+                // Count passable tiles
+                let passable_count = level.tiles.iter()
+                    .flat_map(|row| row.iter())
+                    .filter(|tile| tile.tile_type.is_passable())
+                    .count();
+                println!("Floor 0 generated successfully with {} passable tiles", passable_count);
+                assert!(passable_count > 0, "Floor 0 should have passable tiles");
+            }
+            Err(e) => {
+                panic!("Floor 0 generation failed: {}", e);
+            }
+        }
+    }
+
+    #[test]
+    fn test_stair_alignment_consistency() {
+        let generator = RoomCorridorGenerator::new();
+        let config = GenerationConfig::for_testing(44444);
+        let mut rng = utils::create_rng(&config);
+        
+        // Generate multiple stair layouts and verify consistency
+        for seed_offset in 0..5 {
+            let mut test_rng = utils::create_rng(&GenerationConfig::for_testing(44444 + seed_offset));
+            let stair_positions = generator.generate_stair_layout(&config, &mut test_rng).unwrap();
+            
+            // Verify basic properties
+            assert_eq!(stair_positions.len(), 26);
+            
+            // Check first and last floors
+            let (up_0, down_0) = stair_positions.get(&0).unwrap();
+            assert!(up_0.is_none());
+            assert!(down_0.is_some());
+            
+            let (up_25, down_25) = stair_positions.get(&25).unwrap();
+            assert!(up_25.is_some());
+            assert!(down_25.is_none());
+            
+            // Verify alignment
+            for floor_id in 0..25 {
+                let (_, down_current) = stair_positions.get(&floor_id).unwrap();
+                let (up_next, _) = stair_positions.get(&(floor_id + 1)).unwrap();
+                assert_eq!(down_current, up_next, "Stairs misaligned between floors {} and {}", floor_id, floor_id + 1);
+            }
+        }
+    }
+
+    #[test]
+    fn test_room_around_position_edge_cases() {
+        let generator = RoomCorridorGenerator::new();
+        let config = GenerationConfig::for_testing(55555);
+        let mut rng = utils::create_rng(&config);
+        let level = Level::new(0, 50, 40);
+        
+        // Test room around position near level boundaries
+        let edge_positions = vec![
+            Position::new(2, 2),    // Near top-left
+            Position::new(47, 2),   // Near top-right
+            Position::new(2, 37),   // Near bottom-left
+            Position::new(47, 37),  // Near bottom-right
+        ];
+        
+        for pos in edge_positions {
+            let room = generator.create_room_around_position(1, pos, &config, &mut rng, &level).unwrap();
+            
+            // Room should be within bounds
+            assert!(room.top_left.x >= 1);
+            assert!(room.top_left.y >= 1);
+            assert!(room.top_left.x + (room.width as i32) < (level.width as i32) - 1);
+            assert!(room.top_left.y + (room.height as i32) < (level.height as i32) - 1);
+            
+            // Room should contain the target position
+            assert!(room.contains(pos), "Room should contain target position {:?}", pos);
+        }
+    }
+
+    #[test]
+    fn test_progressive_wall_placement_3d_vs_single() {
+        let config = GenerationConfig::for_testing(66666);
+        let mut rng = utils::create_rng(&config);
+        
+        // Create identical starting levels
+        let mut level_3d = Level::new(0, 30, 20);
+        let mut level_single = Level::new(0, 30, 20);
+        
+        // Place some test rooms
+        let rooms = vec![
+            Room::new(0, Position::new(5, 5), 8, 6, RoomType::Normal),
+            Room::new(1, Position::new(15, 10), 6, 8, RoomType::Normal),
+        ];
+        
+        // Initialize both levels identically
+        let generator_3d = RoomCorridorGenerator::new(); // generate_all_floors = true
+        let generator_single = RoomCorridorGenerator::for_testing(); // generate_all_floors = false
+        
+        generator_3d.initialize_level_with_rooms(&mut level_3d, &rooms).unwrap();
+        generator_single.initialize_level_with_rooms(&mut level_single, &rooms).unwrap();
+        
+        // Apply wall placement
+        let mut rng_3d = utils::create_rng(&config);
+        let mut rng_single = utils::create_rng(&config);
+        
+        generator_3d.progressive_wall_placement(&mut level_3d, &rooms, &mut rng_3d).unwrap();
+        generator_single.progressive_wall_placement(&mut level_single, &rooms, &mut rng_single).unwrap();
+        
+        // Count walls in each
+        let count_walls = |level: &Level| {
+            level.tiles.iter()
+                .flat_map(|row| row.iter())
+                .filter(|tile| tile.tile_type == TileType::Wall)
+                .count()
+        };
+        
+        let walls_3d = count_walls(&level_3d);
+        let walls_single = count_walls(&level_single);
+        
+        // 3D generation should place fewer walls (be less aggressive)
+        assert!(walls_3d <= walls_single, 
+               "3D generation should place fewer walls: {} vs {}", walls_3d, walls_single);
+    }
+
+    #[test]
+    fn test_generate_complete_dungeon_performance() {
+        let generator = RoomCorridorGenerator::new();
+        let config = GenerationConfig::for_testing(77777);
+        let mut rng = utils::create_rng(&config);
+        
+        let start_time = std::time::Instant::now();
+        let world = generator.generate_complete_dungeon(&config, &mut rng).unwrap();
+        let generation_time = start_time.elapsed();
+        
+        // Should complete in reasonable time (less than 30 seconds in debug mode)
+        assert!(generation_time.as_secs() < 30, 
+               "Generation took too long: {:?}", generation_time);
+        
+        // Verify world integrity
+        assert_eq!(world.levels.len(), 26);
+        assert_eq!(world.current_level_id, 0);
+        
+        // Each level should be valid
+        for level_id in 0..26 {
+            let level = world.get_level(level_id).unwrap();
+            assert!(utils::validate_level(level).is_ok(), 
+                   "Level {} should be valid", level_id);
+        }
+        
+        println!("Generated complete 26-level dungeon in {:?}", generation_time);
+    }
+
+    #[test]
+    fn test_3d_generation_stair_connectivity() {
+        let generator = RoomCorridorGenerator::new();
+        let config = GenerationConfig::for_testing(88888);
+        let mut rng = utils::create_rng(&config);
+        
+        let world = generator.generate_complete_dungeon(&config, &mut rng).unwrap();
+        
+        // Test that stairs are connected within each level
+        for level_id in 1..25 { // Skip level 0 (no up stairs) and 25 (no down stairs)
+            let level = world.get_level(level_id).unwrap();
+            
+            if let (Some(up_pos), Some(down_pos)) = (level.stairs_up_position, level.stairs_down_position) {
+                // There should be a path between up and down stairs
+                assert!(generator.has_path(level, up_pos, down_pos).unwrap(),
+                       "Stairs should be connected on level {}", level_id);
+            }
+        }
+    }
+
+    #[test]
+    fn test_world_generator_error_handling() {
+        let generator = RoomCorridorGenerator::new();
+        
+        // Test with invalid config (this shouldn't fail but let's test the pipeline)
+        let config = GenerationConfig::for_testing(99999);
+        let mut rng = utils::create_rng(&config);
+        
+        let world = generator.generate_world(&config, &mut rng);
+        assert!(world.is_ok(), "World generation should handle edge cases gracefully");
+        
+        if let Ok(world) = world {
+            let validation = generator.validate_world(&world, &config);
+            assert!(validation.is_ok(), "Generated world should pass validation");
+        }
     }
 }
