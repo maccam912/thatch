@@ -544,6 +544,11 @@ impl GameState {
             }
 
             GameEvent::EntityDied { entity_id, .. } => {
+                #[cfg(feature = "dev-tools")]
+                tracing::info!("Entity {} died", entity_id);
+                #[cfg(not(feature = "dev-tools"))]
+                println!("Entity {} died", entity_id);
+                
                 // Remove entity from world
                 if let Some(position) = self.get_entity_position(*entity_id) {
                     self.remove_entity_from_position_index(*entity_id, position);
@@ -556,7 +561,12 @@ impl GameState {
 
                 // If this is the player, handle game over
                 if Some(*entity_id) == self.player_id {
+                    #[cfg(feature = "dev-tools")]
+                    tracing::info!("PLAYER DIED! Setting completion state to PlayerDied");
+                    #[cfg(not(feature = "dev-tools"))]
+                    println!("PLAYER DIED! Setting completion state to PlayerDied");
                     self.statistics.deaths += 1;
+                    self.completion_state = GameCompletionState::PlayerDied;
                     response_events.push(GameEvent::Message {
                         text: "Game Over! Press any key to continue...".to_string(),
                         importance: crate::MessageImportance::Critical,

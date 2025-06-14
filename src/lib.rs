@@ -24,6 +24,7 @@ pub mod generation;
 pub mod input;
 pub mod lldm;
 pub mod rendering;
+pub mod scenes;
 pub mod utils;
 
 // Core module re-exports
@@ -32,6 +33,7 @@ pub use generation::*;
 pub use input::*;
 pub use lldm::*;
 pub use rendering::*;
+pub use scenes::*;
 pub use utils::*;
 
 // Explicit re-exports for commonly used types to ensure cross-platform compatibility

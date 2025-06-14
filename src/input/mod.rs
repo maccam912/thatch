@@ -17,6 +17,7 @@ use macroquad::prelude::*;
 ///
 /// Handles keyboard input and converts it to game actions that can be
 /// processed by the game state.
+#[derive(Clone)]
 pub struct InputHandler {
     /// Whether to enable Vi-style movement keys (hjkl)
     pub vi_keys_enabled: bool,
@@ -156,6 +157,11 @@ impl InputHandler {
             return Some(PlayerInput::ToggleAutoexplore);
         }
 
+        // Debug damage (X key)
+        if is_key_pressed(KeyCode::X) {
+            return Some(PlayerInput::DebugDamage);
+        }
+
         None
     }
 
@@ -240,4 +246,6 @@ pub enum PlayerInput {
     NewGame,
     /// Toggle autoexplore debug mode
     ToggleAutoexplore,
+    /// Debug command to deal damage to player
+    DebugDamage,
 }

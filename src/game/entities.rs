@@ -467,10 +467,18 @@ impl Entity for PlayerCharacter {
                 damage,
                 source,
             } if *entity_id == self.id => {
+                #[cfg(feature = "dev-tools")]
+                tracing::info!("Player taking {} damage, current health: {}", damage, self.stats.health);
+                #[cfg(not(feature = "dev-tools"))]
+                println!("Player taking {} damage, current health: {}", damage, self.stats.health);
                 let actual_damage = self.stats.take_damage(*damage);
                 let mut events = vec![];
 
                 if !self.is_alive() {
+                    #[cfg(feature = "dev-tools")]
+                    tracing::info!("Player died! Health: {}, generating EntityDied event", self.stats.health);
+                    #[cfg(not(feature = "dev-tools"))]
+                    println!("Player died! Health: {}, generating EntityDied event", self.stats.health);
                     events.push(GameEvent::EntityDied {
                         entity_id: self.id,
                         killer: *source,
@@ -480,6 +488,10 @@ impl Entity for PlayerCharacter {
                         importance: MessageImportance::Critical,
                     });
                 } else if actual_damage > 0 {
+                    #[cfg(feature = "dev-tools")]
+                    tracing::info!("Player survived with {} health remaining", self.stats.health);
+                    #[cfg(not(feature = "dev-tools"))]
+                    println!("Player survived with {} health remaining", self.stats.health);
                     events.push(GameEvent::Message {
                         text: format!("You take {} damage!", actual_damage),
                         importance: MessageImportance::Important,

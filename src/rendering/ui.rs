@@ -154,6 +154,72 @@ impl UI {
         Ok(())
     }
 
+    /// Renders the death screen when the player dies.
+    pub async fn render_death_screen(&self) -> ThatchResult<()> {
+        clear_background(BLACK);
+
+        let center_x = screen_width() / 2.0;
+        let center_y = screen_height() / 2.0;
+
+        // Title
+        draw_text(
+            "═══ YOU DIED ═══",
+            center_x - 120.0,
+            center_y - 120.0,
+            32.0,
+            RED,
+        );
+
+        // Story text
+        draw_text(
+            "Your adventure ends here in the depths of the dungeon.",
+            center_x - 280.0,
+            center_y - 70.0,
+            20.0,
+            WHITE,
+        );
+        draw_text(
+            "Death is not the end, but a new beginning. Learn from",
+            center_x - 280.0,
+            center_y - 50.0,
+            20.0,
+            WHITE,
+        );
+        draw_text(
+            "your mistakes and return stronger than before.",
+            center_x - 280.0,
+            center_y - 30.0,
+            20.0,
+            WHITE,
+        );
+
+        draw_text(
+            "The dungeon awaits your return...",
+            center_x - 160.0,
+            center_y + 10.0,
+            20.0,
+            DARKGRAY,
+        );
+
+        // Controls
+        draw_text(
+            "Press 'N' for New Game",
+            center_x - 120.0,
+            center_y + 70.0,
+            20.0,
+            GREEN,
+        );
+        draw_text(
+            "Press 'ESC' to Quit",
+            center_x - 120.0,
+            center_y + 90.0,
+            20.0,
+            GREEN,
+        );
+
+        Ok(())
+    }
+
     /// Renders tooltips for special tiles.
     pub fn render_tile_tooltip(&self, tile_type: &TileType, x: f32, y: f32) -> ThatchResult<()> {
         let tooltip_text = match tile_type {
@@ -194,10 +260,7 @@ impl UI {
         match completion_state {
             GameCompletionState::EscapedEarly => self.render_escape_screen().await,
             GameCompletionState::CompletedDungeon => self.render_victory_screen().await,
-            GameCompletionState::PlayerDied => {
-                // TODO: Implement death screen
-                self.render_escape_screen().await // Placeholder
-            }
+            GameCompletionState::PlayerDied => self.render_death_screen().await,
             GameCompletionState::Playing => {
                 // Should not render ending screen if still playing
                 Ok(())
