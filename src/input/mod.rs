@@ -149,6 +149,12 @@ impl InputHandler {
         if is_key_pressed(KeyCode::Key2) {
             return Some(PlayerInput::UseStairs(StairDirection::Down));
         }
+
+        // Debug commands
+        if is_key_pressed(KeyCode::F12) {
+            return Some(PlayerInput::ToggleAutoexplore);
+        }
+
         None
     }
 
@@ -231,4 +237,6 @@ pub enum PlayerInput {
     UseStairs(StairDirection),
     /// Start a new game (when game has ended)
     NewGame,
+    /// Toggle autoexplore debug mode
+    ToggleAutoexplore,
 }

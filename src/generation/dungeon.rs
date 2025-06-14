@@ -547,7 +547,8 @@ impl RoomCorridorGenerator {
         Ok(reachable)
     }
 
-    /// Adds stairs to connect between levels.
+    /// Creates special stair rooms and places stairs to connect between levels.
+    /// Treats stairs as single-cell "rooms" for proper connectivity.
     fn add_stairs(
         &self,
         level: &mut Level,
@@ -559,25 +560,249 @@ impl RoomCorridorGenerator {
             return Ok(());
         }
 
-        // Add stairs up in the first room
-        let first_room = &rooms[0];
-        let floor_positions = first_room.floor_positions();
-        if !floor_positions.is_empty() {
-            let stairs_up_pos = floor_positions[rng.gen_range(0..floor_positions.len())];
-            level.set_tile(stairs_up_pos, Tile::new(TileType::StairsUp))?;
-        }
+        // Create stairs up room - single cell treated as a special room
+        let stairs_up_pos = self.find_stairs_position(level, rooms, true, rng)?;
+        level.set_tile(stairs_up_pos, Tile::new(TileType::StairsUp))?;
+        level.stairs_up_position = Some(stairs_up_pos);
+        
+        // Always set player spawn to stairs up position
+        level.player_spawn = stairs_up_pos;
 
-        // Add stairs down in the last room (if more than one room)
-        if rooms.len() > 1 {
-            let last_room = &rooms[rooms.len() - 1];
-            let floor_positions = last_room.floor_positions();
-            if !floor_positions.is_empty() {
-                let stairs_down_pos = floor_positions[rng.gen_range(0..floor_positions.len())];
-                level.set_tile(stairs_down_pos, Tile::new(TileType::StairsDown))?;
+        // Create stairs down room if not the deepest level
+        if level.id < 25 { // Don't add stairs down on final level
+            let stairs_down_pos = self.find_stairs_position_avoiding(level, rooms, false, stairs_up_pos, rng)?;
+            level.set_tile(stairs_down_pos, Tile::new(TileType::StairsDown))?;
+            level.stairs_down_position = Some(stairs_down_pos);
+            
+            // CRITICAL: Ensure there's a path between up and down stairs
+            if !self.has_path(level, stairs_up_pos, stairs_down_pos)? {
+                // If no path exists, clear a corridor between them
+                self.create_stair_connection(level, stairs_up_pos, stairs_down_pos)?;
             }
         }
 
         Ok(())
+    }
+
+    /// Finds appropriate position for stairs, treating them as special single-cell rooms.
+    fn find_stairs_position(
+        &self,
+        level: &Level,
+        rooms: &[Room],
+        _is_up_stairs: bool,
+        rng: &mut StdRng,
+    ) -> ThatchResult<Position> {
+        // Try to find a good position for stairs
+        // Prefer positions that are accessible but not in the center of large rooms
+        
+        let mut candidates = Vec::new();
+        
+        // Look for floor positions that are:
+        // 1. Adjacent to at least one wall (for interesting placement)
+        // 2. Not in the exact center of rooms (to avoid blocking room flow)
+        // 3. Accessible from the main dungeon area
+        
+        for room in rooms {
+            let room_positions = room.floor_positions();
+            for pos in room_positions {
+                if self.is_good_stair_position(level, pos) {
+                    candidates.push(pos);
+                }
+            }
+        }
+        
+        // If we have candidates, pick one randomly
+        if !candidates.is_empty() {
+            let index = rng.gen_range(0..candidates.len());
+            return Ok(candidates[index]);
+        }
+        
+        // Fallback: use center of first room
+        if !rooms.is_empty() {
+            return Ok(rooms[0].center());
+        }
+        
+        // Final fallback: use level center
+        Ok(Position::new(level.width as i32 / 2, level.height as i32 / 2))
+    }
+    
+    /// Checks if a position is suitable for stairs placement.
+    fn is_good_stair_position(&self, level: &Level, pos: Position) -> bool {
+        // Must be a floor tile
+        if let Some(tile) = level.get_tile(pos) {
+            if tile.tile_type != TileType::Floor {
+                return false;
+            }
+        } else {
+            return false;
+        }
+        
+        // Check if it has at least one adjacent wall (makes it feel more natural)
+        let adjacent_positions = pos.adjacent_positions();
+        let has_adjacent_wall = adjacent_positions.iter().any(|&adj_pos| {
+            if let Some(tile) = level.get_tile(adj_pos) {
+                tile.tile_type == TileType::Wall
+            } else {
+                true // Out of bounds counts as wall
+            }
+        });
+        
+        has_adjacent_wall
+    }
+    
+    /// Finds appropriate position for stairs while avoiding a specific position.
+    /// This ensures up and down stairs are placed in different locations.
+    fn find_stairs_position_avoiding(
+        &self,
+        level: &Level,
+        rooms: &[Room],
+        _is_up_stairs: bool,
+        avoid_position: Position,
+        rng: &mut StdRng,
+    ) -> ThatchResult<Position> {
+        // Try to find a good position for stairs, avoiding the specified position
+        let mut candidates = Vec::new();
+        
+        for room in rooms {
+            let room_positions = room.floor_positions();
+            for pos in room_positions {
+                if self.is_good_stair_position(level, pos) && pos != avoid_position {
+                    // Prefer positions that are further away from the avoid_position
+                    let distance = pos.manhattan_distance(avoid_position);
+                    if distance >= 5 { // Minimum distance between stairs
+                        candidates.push(pos);
+                    }
+                }
+            }
+        }
+        
+        // If we have good candidates, pick one randomly
+        if !candidates.is_empty() {
+            let index = rng.gen_range(0..candidates.len());
+            return Ok(candidates[index]);
+        }
+        
+        // Fallback: find any position different from avoid_position
+        let mut fallback_candidates = Vec::new();
+        for room in rooms {
+            let room_positions = room.floor_positions();
+            for pos in room_positions {
+                if pos != avoid_position {
+                    fallback_candidates.push(pos);
+                }
+            }
+        }
+        
+        if !fallback_candidates.is_empty() {
+            let index = rng.gen_range(0..fallback_candidates.len());
+            return Ok(fallback_candidates[index]);
+        }
+        
+        // Final fallback: use a position different from avoid
+        let fallback = Position::new(
+            if avoid_position.x > level.width as i32 / 2 { 
+                level.width as i32 / 4 
+            } else { 
+                (level.width as i32 * 3) / 4 
+            },
+            if avoid_position.y > level.height as i32 / 2 { 
+                level.height as i32 / 4 
+            } else { 
+                (level.height as i32 * 3) / 4 
+            }
+        );
+        
+        Ok(fallback)
+    }
+    
+    /// Creates a direct connection between two stair positions if none exists.
+    /// Uses a simple line-drawing algorithm to carve a corridor.
+    fn create_stair_connection(
+        &self,
+        level: &mut Level,
+        start: Position,
+        end: Position,
+    ) -> ThatchResult<()> {
+        // Use Bresenham's line algorithm to draw a path between stairs
+        let positions = self.line_between_points(start, end);
+        
+        // Clear all positions along the path
+        for pos in positions {
+            if level.is_valid_position(pos) {
+                // Don't overwrite the stairs themselves
+                if let Some(tile) = level.get_tile(pos) {
+                    match tile.tile_type {
+                        TileType::StairsUp | TileType::StairsDown => {
+                            // Leave stairs as they are
+                            continue;
+                        }
+                        _ => {
+                            // Clear everything else to floor
+                            level.set_tile(pos, Tile::floor())?;
+                        }
+                    }
+                }
+            }
+        }
+        
+        // Also clear a 1-tile buffer around the path for better connectivity
+        let path_positions = self.line_between_points(start, end);
+        for pos in path_positions {
+            for adjacent in pos.cardinal_adjacent_positions() {
+                if level.is_valid_position(adjacent) {
+                    // Only clear if it's a wall and not on the level boundary
+                    if adjacent.x > 0 && adjacent.y > 0 && 
+                       adjacent.x < (level.width as i32 - 1) && 
+                       adjacent.y < (level.height as i32 - 1) {
+                        if let Some(tile) = level.get_tile(adjacent) {
+                            if tile.tile_type == TileType::Wall {
+                                level.set_tile(adjacent, Tile::floor())?;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        Ok(())
+    }
+    
+    /// Generates points along a line between two positions using Bresenham's algorithm.
+    fn line_between_points(&self, start: Position, end: Position) -> Vec<Position> {
+        let mut points = Vec::new();
+        
+        let mut x0 = start.x;
+        let mut y0 = start.y;
+        let x1 = end.x;
+        let y1 = end.y;
+        
+        let dx = (x1 - x0).abs();
+        let dy = (y1 - y0).abs();
+        let sx = if x0 < x1 { 1 } else { -1 };
+        let sy = if y0 < y1 { 1 } else { -1 };
+        let mut err = dx - dy;
+        
+        loop {
+            points.push(Position::new(x0, y0));
+            
+            if x0 == x1 && y0 == y1 {
+                break;
+            }
+            
+            let e2 = 2 * err;
+            
+            if e2 > -dy {
+                err -= dy;
+                x0 += sx;
+            }
+            
+            if e2 < dx {
+                err += dx;
+                y0 += sy;
+            }
+        }
+        
+        points
     }
 }
 
@@ -599,10 +824,7 @@ impl Generator<Level> for RoomCorridorGenerator {
         // Step 3: Progressively add walls while maintaining connectivity
         self.progressive_wall_placement(&mut level, &rooms, rng)?;
 
-        // Set player spawn point to first room
-        if !rooms.is_empty() {
-            level.player_spawn = rooms[0].center();
-        }
+        // Player spawn will be set in add_stairs method to stairs up position
 
         // Step 4: Add stairs
         self.add_stairs(&mut level, &rooms, config, rng)?;
@@ -829,5 +1051,88 @@ mod tests {
         
         // Should have exactly 4 reachable tiles
         assert_eq!(reachable.len(), 4);
+    }
+
+    #[test]
+    fn test_stair_connectivity() {
+        let generator = RoomCorridorGenerator::for_testing();
+        let config = GenerationConfig::for_testing(54321);
+        let mut rng = utils::create_rng(&config);
+
+        // Generate a level
+        let level = generator.generate(&config, &mut rng).unwrap();
+        
+        // Check if level has both up and down stairs
+        if let (Some(stairs_up), Some(stairs_down)) = 
+            (level.stairs_up_position, level.stairs_down_position) {
+            
+            // Verify there's a path between them
+            assert!(generator.has_path(&level, stairs_up, stairs_down).unwrap(),
+                   "Stairs up and down should be connected by a path");
+            
+            // Verify stairs are not in the same position
+            assert_ne!(stairs_up, stairs_down, "Stairs should be in different positions");
+        }
+    }
+
+    #[test]
+    fn test_line_between_points() {
+        let generator = RoomCorridorGenerator::new();
+        
+        // Test horizontal line
+        let points = generator.line_between_points(
+            Position::new(1, 5), 
+            Position::new(5, 5)
+        );
+        assert_eq!(points.len(), 5);
+        assert!(points.contains(&Position::new(1, 5)));
+        assert!(points.contains(&Position::new(3, 5)));
+        assert!(points.contains(&Position::new(5, 5)));
+        
+        // Test vertical line
+        let points = generator.line_between_points(
+            Position::new(3, 1), 
+            Position::new(3, 4)
+        );
+        assert_eq!(points.len(), 4);
+        assert!(points.contains(&Position::new(3, 1)));
+        assert!(points.contains(&Position::new(3, 4)));
+        
+        // Test diagonal line
+        let points = generator.line_between_points(
+            Position::new(0, 0), 
+            Position::new(2, 2)
+        );
+        assert_eq!(points.len(), 3);
+        assert!(points.contains(&Position::new(0, 0)));
+        assert!(points.contains(&Position::new(1, 1)));
+        assert!(points.contains(&Position::new(2, 2)));
+    }
+
+    #[test]
+    fn test_stair_connection_creation() {
+        let generator = RoomCorridorGenerator::new();
+        let mut level = Level::new(0, 20, 20);
+        
+        // Fill level with walls initially
+        for y in 0..20 {
+            for x in 0..20 {
+                let pos = Position::new(x as i32, y as i32);
+                level.set_tile(pos, Tile::wall()).unwrap();
+            }
+        }
+        
+        // Place stairs at specific positions
+        let stairs_up = Position::new(2, 2);
+        let stairs_down = Position::new(17, 17);
+        level.set_tile(stairs_up, Tile::new(TileType::StairsUp)).unwrap();
+        level.set_tile(stairs_down, Tile::new(TileType::StairsDown)).unwrap();
+        
+        // Create connection
+        generator.create_stair_connection(&mut level, stairs_up, stairs_down).unwrap();
+        
+        // Verify path exists
+        assert!(generator.has_path(&level, stairs_up, stairs_down).unwrap(),
+               "Connection should create a valid path between stairs");
     }
 }

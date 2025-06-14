@@ -7,11 +7,12 @@
 //! for game operations and maintains consistency across all game components.
 
 use crate::{
-    ActionQueue, ConcreteEntity, Entity, EntityId, EntityStats, GameEvent, Level,
-    PlayerCharacter, Position, ThatchError, ThatchResult, TileType, World,
+    ActionQueue, AutoexploreState, ConcreteEntity, Direction, Entity, EntityId, EntityStats, 
+    GameEvent, Level, MoveAction, PlayerCharacter, Position, StairDirection, ThatchError, 
+    ThatchResult, TileType, UseStairsAction, World,
 };
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, BinaryHeap};
 use std::time::{Duration, Instant};
 
 /// Central game state containing all game data and systems.
@@ -48,6 +49,9 @@ pub struct GameState {
     pub lldm_state: LldmState,
     /// Current game completion state
     pub completion_state: GameCompletionState,
+    /// Autoexplore debug state (not serialized)
+    #[serde(skip)]
+    pub autoexplore_state: AutoexploreState,
 }
 
 /// Game statistics tracking player progress and achievements.
@@ -226,6 +230,7 @@ impl GameState {
                 },
             },
             completion_state: GameCompletionState::Playing,
+            autoexplore_state: AutoexploreState::new(),
         }
     }
 
@@ -326,6 +331,7 @@ impl GameState {
                 },
             },
             completion_state: GameCompletionState::Playing,
+            autoexplore_state: AutoexploreState::new(),
         })
     }
 
@@ -520,6 +526,7 @@ impl GameState {
     }
 
     /// Updates player's field of view and tile visibility.
+    /// This preserves exploration state while updating current visibility.
     pub fn update_player_visibility(&mut self, player_position: Position) -> ThatchResult<()> {
         let player = self
             .get_player()
@@ -533,10 +540,10 @@ impl GameState {
             .current_level_mut()
             .ok_or_else(|| ThatchError::InvalidState("No current level".to_string()))?;
 
-        // Reset all tiles to not visible
+        // Reset all tiles to not visible (but preserve exploration state)
         for row in &mut level.tiles {
             for tile in row {
-                tile.set_visible(false);
+                tile.visible = false; // Don't use set_visible as it would mark as explored
             }
         }
 
@@ -548,7 +555,7 @@ impl GameState {
                 // Check if position is within sight radius (circular)
                 if player_position.euclidean_distance(pos) <= sight_radius as f64 {
                     if let Some(tile) = level.get_tile_mut(pos) {
-                        tile.set_visible(true);
+                        tile.set_visible(true); // This marks as explored and visible
                     }
                 }
             }
@@ -689,10 +696,10 @@ impl GameState {
             // Change level
             self.world.change_level(level_id)?;
 
-            // Add to new level and move to spawn point
+            // Add to new level and move to spawn point (stairs)
             if let Some(new_level) = self.world.current_level_mut() {
                 new_level.add_entity(player_id);
-                let spawn_pos = new_level.player_spawn;
+                let spawn_pos = new_level.player_spawn; // This is now always stairs up
                 
                 // Update entity position
                 let old_pos = if let Some(player) = self.get_player() {
@@ -707,11 +714,22 @@ impl GameState {
                 }
                 self.add_entity_to_position_index(player_id, spawn_pos);
             }
+            
+            // CRITICAL: Update visibility immediately after level change
+            // This ensures the player can see around them when entering a level
+            if let Some(player_pos) = self.get_entity_position(player_id) {
+                self.update_player_visibility(player_pos)?;
+            }
 
             // Update statistics
             if level_id > self.statistics.max_depth_reached {
                 self.statistics.max_depth_reached = level_id;
                 self.statistics.levels_explored += 1;
+            }
+            
+            // Force an immediate visibility update to prevent "blank screen" bug
+            if let Some(player_pos) = self.get_entity_position(player_id) {
+                let _ = self.update_player_visibility(player_pos);
             }
         }
 
@@ -736,8 +754,53 @@ impl GameState {
         // Set level name based on depth
         level.name = Some(format!("Dungeon Level {}", level_id + 1));
         
+        // Align stairs with previous level if possible
+        self.align_stairs_with_previous_level(&mut level, level_id);
+        
         self.world.add_level(level);
         Ok(())
+    }
+    
+    /// Aligns stairs between levels for consistent navigation.
+    fn align_stairs_with_previous_level(&self, level: &mut Level, level_id: u32) {
+        // If going down from previous level, align stairs up with previous level's stairs down
+        if level_id > 0 {
+            if let Some(prev_level) = self.world.get_level(level_id - 1) {
+                if let Some(prev_stairs_down) = prev_level.stairs_down_position {
+                    // Try to place stairs up at the same position as previous level's stairs down
+                    if level.is_valid_position(prev_stairs_down) {
+                        // Make sure the position is or can be made passable
+                        let _ = level.set_tile(prev_stairs_down, crate::Tile::new(crate::TileType::StairsUp));
+                        level.stairs_up_position = Some(prev_stairs_down);
+                        level.player_spawn = prev_stairs_down;
+                        
+                        // Ensure there's a clear area around the stairs
+                        self.clear_area_around_stairs(level, prev_stairs_down);
+                    }
+                }
+            }
+        }
+        
+        // If going up to next level, try to align stairs down for future consistency
+        // This is handled when the next level is generated
+    }
+    
+    /// Clears a small area around stairs to ensure accessibility.
+    fn clear_area_around_stairs(&self, level: &mut Level, stairs_pos: Position) {
+        // Clear a 3x3 area around stairs to ensure accessibility
+        for dy in -1..=1 {
+            for dx in -1..=1 {
+                let clear_pos = Position::new(stairs_pos.x + dx, stairs_pos.y + dy);
+                if level.is_valid_position(clear_pos) && clear_pos != stairs_pos {
+                    // Only clear if it's not a boundary wall
+                    if clear_pos.x > 0 && clear_pos.y > 0 && 
+                       clear_pos.x < (level.width as i32 - 1) && 
+                       clear_pos.y < (level.height as i32 - 1) {
+                        let _ = level.set_tile(clear_pos, crate::Tile::floor());
+                    }
+                }
+            }
+        }
     }
 
     /// Resets the game state for a new game.
@@ -788,6 +851,170 @@ impl GameState {
     /// Gets the current completion state.
     pub fn get_completion_state(&self) -> &GameCompletionState {
         &self.completion_state
+    }
+
+    /// Toggles autoexplore debug mode.
+    pub fn toggle_autoexplore(&mut self) -> bool {
+        self.autoexplore_state.toggle()
+    }
+
+    /// Gets the next autoexplore action if enabled and ready.
+    pub fn get_autoexplore_action(&mut self) -> ThatchResult<Option<crate::ConcreteAction>> {
+        if !self.autoexplore_state.enabled || !self.autoexplore_state.can_perform_action() {
+            return Ok(None);
+        }
+
+        let player = self.get_player()
+            .ok_or_else(|| ThatchError::InvalidState("No player found".to_string()))?;
+        let player_pos = player.position();
+        let player_id = player.id();
+
+        // Check if we're already on stairs down
+        if let Some(level) = self.world.current_level() {
+            if let Some(tile) = level.get_tile(player_pos) {
+                if tile.tile_type == TileType::StairsDown {
+                    // We're on stairs down, use them
+                    self.autoexplore_state.mark_action_performed();
+                    return Ok(Some(crate::ConcreteAction::UseStairs(UseStairsAction::new(
+                        player_id,
+                        StairDirection::Down,
+                    ))));
+                }
+            }
+        }
+
+        // If we have a current path, follow it
+        if !self.autoexplore_state.current_path.is_empty() {
+            let next_pos = self.autoexplore_state.current_path.remove(0);
+            if let Some(direction) = self.get_direction_to_position(player_pos, next_pos) {
+                self.autoexplore_state.mark_action_performed();
+                return Ok(Some(crate::ConcreteAction::Move(MoveAction {
+                    actor: player_id,
+                    direction,
+                    metadata: HashMap::new(),
+                })));
+            } else {
+                // Path is invalid, clear it
+                self.autoexplore_state.current_path.clear();
+            }
+        }
+
+        // We need a new path - find stairs down
+        if let Some(stairs_down_pos) = self.find_stairs_down() {
+            if let Some(path) = self.autoexplore_find_path(player_pos, stairs_down_pos)? {
+                self.autoexplore_state.current_path = path;
+                self.autoexplore_state.target = Some(stairs_down_pos);
+                
+                // Return the first move in the path
+                if !self.autoexplore_state.current_path.is_empty() {
+                    let next_pos = self.autoexplore_state.current_path.remove(0);
+                    if let Some(direction) = self.get_direction_to_position(player_pos, next_pos) {
+                        self.autoexplore_state.mark_action_performed();
+                        return Ok(Some(crate::ConcreteAction::Move(MoveAction {
+                            actor: player_id,
+                            direction,
+                            metadata: HashMap::new(),
+                        })));
+                    }
+                }
+            }
+        }
+
+        // No stairs down found or no path available
+        Ok(None)
+    }
+
+    /// Helper method to get direction between positions for autoexplore.
+    fn get_direction_to_position(&self, from: Position, to: Position) -> Option<Direction> {
+        let delta = to - from;
+        Direction::from_delta(delta)
+    }
+
+    /// Helper method to find stairs down position for autoexplore.
+    fn find_stairs_down(&self) -> Option<Position> {
+        let level = self.world.current_level()?;
+        level.stairs_down_position
+    }
+
+    /// Helper method for autoexplore pathfinding.
+    fn autoexplore_find_path(
+        &self,
+        start: Position,
+        goal: Position,
+    ) -> ThatchResult<Option<Vec<Position>>> {
+        let level = self.world.current_level()
+            .ok_or_else(|| ThatchError::InvalidState("No current level".to_string()))?;
+
+        // A* algorithm implementation
+        let mut open_set = BinaryHeap::new();
+        let mut came_from = HashMap::new();
+        let mut g_score = HashMap::new();
+        let mut f_score = HashMap::new();
+
+        g_score.insert(start, 0.0);
+        f_score.insert(start, start.euclidean_distance(goal));
+        open_set.push(crate::autoexplore::AStarNode {
+            position: start,
+            f_score: start.euclidean_distance(goal),
+        });
+
+        while let Some(current_node) = open_set.pop() {
+            let current = current_node.position;
+
+            if current == goal {
+                // Reconstruct path
+                let mut path = Vec::new();
+                let mut current_pos = goal;
+                
+                while let Some(&prev) = came_from.get(&current_pos) {
+                    path.push(current_pos);
+                    current_pos = prev;
+                }
+                
+                path.reverse();
+                return Ok(Some(path));
+            }
+
+            // Check all adjacent positions
+            for neighbor in current.adjacent_positions() {
+                if !level.is_valid_position(neighbor) {
+                    continue;
+                }
+
+                // Check if tile is passable
+                let tile = level.get_tile(neighbor).unwrap();
+                if !tile.tile_type.is_passable() {
+                    continue;
+                }
+
+                // Check if there's an entity blocking the path (except at goal)
+                if neighbor != goal && self.get_entity_at_position(neighbor).is_some() {
+                    continue;
+                }
+
+                let tentative_g_score = g_score.get(&current).unwrap_or(&f64::INFINITY) + 1.0;
+
+                if tentative_g_score < *g_score.get(&neighbor).unwrap_or(&f64::INFINITY) {
+                    came_from.insert(neighbor, current);
+                    g_score.insert(neighbor, tentative_g_score);
+                    let f = tentative_g_score + neighbor.euclidean_distance(goal);
+                    f_score.insert(neighbor, f);
+
+                    // Add to open set if not already there with a better score
+                    open_set.push(crate::autoexplore::AStarNode {
+                        position: neighbor,
+                        f_score: f,
+                    });
+                }
+            }
+        }
+
+        Ok(None) // No path found
+    }
+
+    /// Checks if autoexplore is currently enabled.
+    pub fn is_autoexplore_enabled(&self) -> bool {
+        self.autoexplore_state.enabled
     }
 }
 

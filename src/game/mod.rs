@@ -9,11 +9,13 @@
 //! - Action system for MCP-compatible commands
 
 pub mod actions;
+pub mod autoexplore;
 pub mod entities;
 pub mod state;
 pub mod world;
 
 pub use actions::*;
+pub use autoexplore::*;
 pub use entities::*;
 pub use state::*;
 pub use world::*;

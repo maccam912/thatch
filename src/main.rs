@@ -173,6 +173,8 @@ async fn run_game_loop(
     // Main game loop
     loop {
         // Handle input
+        let mut action_executed = false;
+        
         if let Some(input) = input_handler.get_input() {
             match input {
                 thatch::PlayerInput::Quit => {
@@ -181,7 +183,17 @@ async fn run_game_loop(
                 }
 
                 thatch::PlayerInput::Help => {
-                    display.add_message("Help: WASD/arrows=move, ESC=quit, SPACE=wait".to_string());
+                    display.add_message("Help: WASD/arrows=move, ESC=quit, SPACE=wait, F12=autoexplore".to_string());
+                    continue;
+                }
+
+                thatch::PlayerInput::ToggleAutoexplore => {
+                    let enabled = game_state.toggle_autoexplore();
+                    if enabled {
+                        display.add_message("Autoexplore enabled (F12 to toggle off)".to_string());
+                    } else {
+                        display.add_message("Autoexplore disabled".to_string());
+                    }
                     continue;
                 }
 
@@ -209,6 +221,7 @@ async fn run_game_loop(
 
                                 // Advance the turn
                                 game_state.advance_turn()?;
+                                action_executed = true;
                             }
                             Err(e) => {
                                 // Suppress wall collision messages to reduce noise
@@ -217,6 +230,36 @@ async fn run_game_loop(
                                 }
                             }
                         }
+                    }
+                }
+            }
+        }
+
+        // If no manual input was processed, check for autoexplore actions
+        if !action_executed {
+            if let Some(autoexplore_action) = game_state.get_autoexplore_action()? {
+                match autoexplore_action.execute(&mut game_state) {
+                    Ok(events) => {
+                        // Process any resulting events
+                        for event in &events {
+                            let response_events = game_state.process_event(event)?;
+
+                            // Display any messages from events
+                            for response_event in response_events {
+                                if let thatch::GameEvent::Message { text, .. } = response_event {
+                                    display.add_message(text);
+                                }
+                            }
+                        }
+
+                        // Advance the turn
+                        game_state.advance_turn()?;
+                        action_executed = true;
+                    }
+                    Err(e) => {
+                        // Autoexplore failed, disable it
+                        game_state.toggle_autoexplore();
+                        display.add_message(format!("Autoexplore disabled due to error: {}", e));
                     }
                 }
             }

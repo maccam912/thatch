@@ -183,6 +183,10 @@ pub struct Level {
     pub entities: Vec<EntityId>,
     /// Spawn point for the player on this level
     pub player_spawn: Position,
+    /// Position of stairs up (if any)
+    pub stairs_up_position: Option<Position>,
+    /// Position of stairs down (if any)
+    pub stairs_down_position: Option<Position>,
     /// Optional name/description for this level (LLDM can set this)
     pub name: Option<String>,
     /// Level-specific metadata for LLDM integration
@@ -218,6 +222,8 @@ impl Level {
             tiles,
             entities: Vec::new(),
             player_spawn: Position::new(width as i32 / 2, height as i32 / 2),
+            stairs_up_position: None,
+            stairs_down_position: None,
             name: None,
             metadata: HashMap::new(),
         }
